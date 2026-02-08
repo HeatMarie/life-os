@@ -1,0 +1,648 @@
+// LifeOS - Gamified Productivity RPG Database Schema
+// PostgreSQL with Supabase
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+    provider  = "postgresql"
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// USER & CHARACTER SYSTEM
+// ══════════════════════════════════════════════════════════════════════════════
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  avatarUrl     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Auth
+  supabaseId    String    @unique
+  
+  // Relations
+  character     Character?
+  tasks         Task[]
+  events        Event[]
+  projects      Project[]
+  goals         Goal[]
+  writings      WritingPiece[]
+  achievements  UserAchievement[]
+  inventory     InventoryItem[]
+  questChains   QuestChain[]
+  dailyChallenges DailyChallenge[]
+  healthSyncs   HealthSync[]
+  healthLogs    HealthLog[]
+  
+  @@map("users")
+}
+
+enum CharacterClass {
+  WARRIOR  // +25% XP from Work, +20 max HP
+  MAGE     // +25% XP from Side Projects, +20 energy regen/day
+  ROGUE    // +25% XP from Home, +15% loot drop rate
+  BARD     // +25% XP from Writing, +1 streak protection/week
+}
+
+enum CharacterStatus {
+  ALIVE
+  DEAD
+  EXHAUSTED  // Burnout state - 0 energy
+}
+
+model Character {
+  id            String          @id @default(cuid())
+  userId        String          @unique
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name          String
+  class         CharacterClass
+  level         Int             @default(1)
+  xp            Int             @default(0)
+  xpToNextLevel Int             @default(250)
+  
+  // Health System
+  hp            Int             @default(100)
+  maxHp         Int             @default(100)
+  
+  // Energy/Burnout System
+  energy        Int             @default(100)
+  maxEnergy     Int             @default(100)
+  energyRegenRate Int           @default(20) // Per day while sleeping
+  
+  status        CharacterStatus @default(ALIVE)
+  diedAt        DateTime?
+  deathCount    Int             @default(0)
+  
+  // Streaks & Combos
+  currentStreak Int             @default(0)
+  longestStreak Int             @default(0)
+  lastActiveAt  DateTime        @default(now())
+  streakProtection Int          @default(0) // Days of protection remaining
+  
+  // Stats
+  tasksCompleted Int            @default(0)
+  bossesDefeated Int            @default(0)
+  totalXpEarned  Int            @default(0)
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  @@map("characters")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AREAS, PROJECTS & TASKS
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum AreaType {
+  WORK
+  HOME
+  WRITING
+  SIDE_PROJECTS
+}
+
+model Area {
+  id          String    @id @default(cuid())
+  type        AreaType  @unique
+  displayName String
+  icon        String
+  color       String    // Hex color
+  sortOrder   Int
+  
+  projects    Project[]
+  tasks       Task[]
+  events      Event[]
+  goals       Goal[]
+  writings    WritingPiece[]
+  
+  @@map("areas")
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  areaId      String
+  area        Area      @relation(fields: [areaId], references: [id])
+  
+  name        String
+  description String?
+  status      String    @default("active") // active, completed, paused, archived
+  targetDate  DateTime?
+  
+  tasks       Task[]
+  boss        Boss?
+  writings    WritingPiece[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@map("projects")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  WAITING
+  SOMEDAY
+  DONE
+  CANCELLED
+}
+
+enum Priority {
+  URGENT    // 35 energy, 120 XP base
+  HIGH      // 25 energy, 90 XP base
+  MEDIUM    // 15 energy, 60 XP base
+  LOW       // 10 energy, 30 XP base
+  NONE      // 5 energy, 20 XP base
+}
+
+model Task {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  areaId      String
+  area        Area        @relation(fields: [areaId], references: [id])
+  projectId   String?
+  project     Project?    @relation(fields: [projectId], references: [id])
+  
+  title       String
+  description String?
+  status      TaskStatus  @default(TODO)
+  priority    Priority    @default(MEDIUM)
+  
+  // Energy & XP
+  energyCost  Int         @default(15)
+  xpReward    Int         @default(60)
+  
+  // Dates
+  dueDate     DateTime?
+  completedAt DateTime?
+  
+  // Boss damage (if linked to project with boss)
+  damageDealt Int         @default(0)
+  
+  // Quest chain link
+  questChainId String?
+  questChain   QuestChain? @relation(fields: [questChainId], references: [id])
+  questStepIndex Int?
+  
+  // Tags
+  tags        TaskTag[]
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  @@map("tasks")
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  color     String?
+  tasks     TaskTag[]
+  
+  @@map("tags")
+}
+
+model TaskTag {
+  taskId    String
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  
+  @@id([taskId, tagId])
+  @@map("task_tags")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CALENDAR & EVENTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Event {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  areaId        String
+  area          Area      @relation(fields: [areaId], references: [id])
+  
+  title         String
+  description   String?
+  location      String?
+  
+  startsAt      DateTime
+  endsAt        DateTime
+  allDay        Boolean   @default(false)
+  
+  // Google Calendar sync
+  googleEventId String?   @unique
+  lastSyncedAt  DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@map("events")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RPG: BOSSES
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum BossStatus {
+  DORMANT
+  ACTIVE
+  DEFEATED
+  ESCAPED  // Deadline passed without defeat
+}
+
+model Boss {
+  id          String      @id @default(cuid())
+  projectId   String      @unique
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  name        String      // e.g., "THE WEDDING PLANNER"
+  description String?
+  icon        String      @default("💀")
+  
+  hp          Int
+  maxHp       Int
+  status      BossStatus  @default(ACTIVE)
+  deadline    DateTime?
+  
+  // Rewards
+  xpReward    Int         @default(500)
+  lootTableId String?     // Reference to loot drop chances
+  
+  defeatedAt  DateTime?
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  @@map("bosses")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RPG: ACHIEVEMENTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum Rarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+model Achievement {
+  id          String    @id @default(cuid())
+  code        String    @unique // e.g., "FIRST_BLOOD", "WEEK_WARRIOR"
+  name        String
+  description String
+  icon        String
+  rarity      Rarity
+  xpReward    Int
+  
+  // Unlock conditions (JSON for flexibility)
+  condition   Json      // { type: "TASKS_COMPLETED", value: 100 }
+  
+  users       UserAchievement[]
+  
+  @@map("achievements")
+}
+
+model UserAchievement {
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  
+  unlockedAt    DateTime    @default(now())
+  progress      Int         @default(0) // Progress toward unlock
+  
+  @@id([userId, achievementId])
+  @@map("user_achievements")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RPG: INVENTORY & LOOT
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum ItemType {
+  XP_SHARD        // +25 XP
+  XP_CRYSTAL      // +75 XP
+  STREAK_SHIELD   // Protect streak 1 day
+  ENERGY_POTION   // Restore 25 energy
+  DOUBLE_XP_TOKEN // Next task 2x XP
+  BOSS_BANE       // 50% extra boss damage
+  HEALTH_POTION   // Restore 25 HP
+  REVIVE_TOKEN    // Instant respawn (skip 24hr cooldown)
+}
+
+model InventoryItem {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  itemType  ItemType
+  quantity  Int       @default(1)
+  rarity    Rarity
+  
+  // Item metadata
+  name      String
+  icon      String
+  effect    String
+  
+  acquiredAt DateTime @default(now())
+  
+  @@unique([userId, itemType])
+  @@map("inventory_items")
+}
+
+model LootTable {
+  id        String    @id @default(cuid())
+  name      String    // e.g., "Task Completion", "Boss Defeat"
+  
+  drops     Json      // Array of { itemType, rarity, chance }
+  
+  @@map("loot_tables")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RPG: QUEST CHAINS
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum QuestStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+model QuestChain {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  title       String      // e.g., "The Harmoni Launch Arc"
+  narrative   String?     // Story text
+  
+  steps       Json        // Array of step titles/descriptions
+  currentStep Int         @default(0)
+  totalSteps  Int
+  
+  status      QuestStatus @default(ACTIVE)
+  
+  // Rewards
+  xpReward    Int         @default(500)
+  
+  tasks       Task[]      // Tasks linked to this quest
+  
+  createdAt   DateTime    @default(now())
+  completedAt DateTime?
+  
+  @@map("quest_chains")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RPG: DAILY CHALLENGES
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum ChallengeType {
+  COMPLETE_TASKS      // Complete N tasks
+  HIGH_PRIORITY       // Complete a high-priority task
+  DEFEAT_BOSS         // Deal damage to a boss
+  WORKOUT             // Complete a workout task
+  WRITING             // Write N words
+  MULTI_AREA          // Tasks in multiple areas
+  EARLY_BIRD          // Complete a task before 8am
+  NIGHT_OWL           // Complete a task after 10pm
+}
+
+model DailyChallenge {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type        ChallengeType
+  description String
+  
+  target      Int           @default(1)
+  progress    Int           @default(0)
+  completed   Boolean       @default(false)
+  
+  xpReward    Int           @default(75)
+  
+  date        DateTime      @default(now()) @db.Date
+  
+  @@unique([userId, type, date])
+  @@map("daily_challenges")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GOALS & WRITING
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Goal {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  areaId    String
+  area      Area        @relation(fields: [areaId], references: [id])
+  
+  title     String
+  cadence   String      // daily, weekly, monthly
+  target    Int
+  unit      String      // tasks, words, sessions, hours
+  
+  entries   GoalEntry[]
+  
+  createdAt DateTime    @default(now())
+  
+  @@map("goals")
+}
+
+model GoalEntry {
+  id        String    @id @default(cuid())
+  goalId    String
+  goal      Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  
+  value     Int
+  date      DateTime  @db.Date
+  
+  @@unique([goalId, date])
+  @@map("goal_entries")
+}
+
+enum WritingType {
+  STORY
+  BLOG_POST
+  ARTICLE
+  POETRY
+  OTHER
+}
+
+enum WritingStatus {
+  IDEA
+  OUTLINING
+  DRAFTING
+  EDITING
+  PUBLISHED
+  ABANDONED
+}
+
+model WritingPiece {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  areaId      String
+  area        Area          @relation(fields: [areaId], references: [id])
+  projectId   String?
+  project     Project?      @relation(fields: [projectId], references: [id])
+  
+  title       String
+  type        WritingType
+  status      WritingStatus @default(IDEA)
+  
+  wordCount   Int           @default(0)
+  targetWords Int           @default(0)
+  
+  sessions    WritingSession[]
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  @@map("writing_pieces")
+}
+
+model WritingSession {
+  id          String        @id @default(cuid())
+  writingId   String
+  writing     WritingPiece  @relation(fields: [writingId], references: [id], onDelete: Cascade)
+  
+  wordsAdded  Int
+  duration    Int?          // Minutes
+  
+  createdAt   DateTime      @default(now())
+  
+  @@map("writing_sessions")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HEALTH DEVICE INTEGRATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum HealthProvider {
+  APPLE_HEALTH
+  GOOGLE_FIT
+  FITBIT
+}
+
+model HealthSync {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  provider      HealthProvider
+  accessToken   String?
+  refreshToken  String?
+  
+  lastSyncAt    DateTime?
+  
+  // Aggregated data
+  workoutToday  Boolean         @default(false)
+  sleepHours    Float?
+  steps         Int?
+  activeMinutes Int?
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  
+  @@unique([userId, provider])
+  @@map("health_syncs")
+}
+
+enum HealthLogType {
+  WORKOUT
+  STEPS
+  SLEEP
+  WATER
+  CALORIES
+  ACTIVE_MINUTES
+  HEART_RATE
+  WEIGHT
+  MOOD
+}
+
+enum HealthSource {
+  MANUAL
+  APPLE_HEALTH
+  IOS_SHORTCUT
+  GOOGLE_FIT
+  FITBIT
+}
+
+model HealthLog {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type        HealthLogType
+  value       Float?        // Numeric value (steps, oz, hours, etc.)
+  unit        String?       // "steps", "oz", "hours", "minutes", "lbs", etc.
+  notes       String?       // Optional notes (e.g., workout type)
+  
+  source      HealthSource  @default(MANUAL)
+  loggedAt    DateTime      @default(now())
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  @@map("health_logs")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GOOGLE CALENDAR SYNC
+// ══════════════════════════════════════════════════════════════════════════════
+
+model CalendarSync {
+  id              String    @id @default(cuid())
+  userId          String
+  
+  provider        String    @default("GOOGLE") // GOOGLE, APPLE, etc.
+  email           String?
+  accessToken     String
+  refreshToken    String?
+  tokenExpiresAt  DateTime?
+  
+  isActive        Boolean   @default(true)
+  lastSyncAt      DateTime?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@unique([userId, provider, email])
+  @@map("calendar_syncs")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AI INTERACTION LOGS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model AIConversation {
+  id        String      @id @default(cuid())
+  userId    String
+  
+  title     String?
+  context   String?     // dailyPlanning, taskBreakdown, writing, etc.
+  messages  Json        @default("[]")
+  
+  provider  String?     // huggingface, claude
+  
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  
+  @@map("ai_conversations")
+}
