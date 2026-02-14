@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 // GET /api/bosses - List all bosses
 export async function GET(request: NextRequest) {
   try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const { searchParams } = new URL(request.url);
     
     const status = searchParams.get("status"); // ACTIVE, DEFEATED
 
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {
+      project: { userId: user.id }
+    };
     if (status) where.status = status;
 
     const bosses = await db.boss.findMany({
@@ -35,6 +42,10 @@ export async function GET(request: NextRequest) {
 // POST /api/bosses - Create a new boss (linked to a project)
 export async function POST(request: NextRequest) {
   try {
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const body = await request.json();
 
     // Calculate boss HP based on difficulty

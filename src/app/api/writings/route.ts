@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 export async function GET() {
   try {
-    // Get user - in production, this would come from auth
-    const user = await db.user.findFirst();
+    const user = await getAuthenticatedUser();
     
     if (!user) {
-      // Return empty array if no user
-      return NextResponse.json([]);
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const writings = await db.writingPiece.findMany({
@@ -39,13 +38,12 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { title, type, areaId, projectId, targetWords } = body;
 
-    // Get user - in production, this would come from auth
-    const user = await db.user.findFirst();
+    const user = await getAuthenticatedUser();
     
     if (!user) {
       return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
+        { error: "Unauthorized" },
+        { status: 401 }
       );
     }
 

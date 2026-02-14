@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 // Health log types (from Prisma schema)
 type HealthLogType = "WORKOUT" | "STEPS" | "SLEEP" | "WATER" | "CALORIES" | "ACTIVE_MINUTES" | "HEART_RATE" | "WEIGHT" | "MOOD";
@@ -22,10 +23,10 @@ interface TodayStats {
 // GET /api/health - Get health stats for the user
 export async function GET(request: NextRequest) {
   try {
-    const user = await db.user.findFirst();
+    const user = await getAuthenticatedUser();
     
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);

@@ -15,9 +15,12 @@ import {
   Flame,
   Shield,
   Heart,
+  Book,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { signOut } from "@/lib/supabase/client";
 
 // Character type from API
 interface Character {
@@ -33,6 +36,11 @@ interface Character {
   currentStreak: number;
   tasksCompleted: number;
   status: string;
+}
+
+// Props for the sidebar
+interface AppSidebarProps {
+  character?: Character | null;
 }
 
 // Default character for loading state
@@ -64,18 +72,20 @@ const NAV_ITEMS: NavItem[] = [
   { id: "tasks", label: "QUESTS", icon: ListTodo, href: "/tasks" },
   { id: "arena", label: "ARENA", icon: Swords, href: "/arena" },
   { id: "calendar", label: "SCHEDULE", icon: Calendar, href: "/calendar" },
+  { id: "chronicle", label: "CHRONICLE", icon: Book, href: "/chronicle" },
   { id: "health", label: "VITALS", icon: Heart, href: "/health" },
   { id: "writing", label: "WRITING", icon: BookOpen, href: "/writing" },
   { id: "achievements", label: "TROPHIES", icon: Trophy, href: "/achievements" },
 ];
 
-export function AppSidebar() {
+export function AppSidebar({ character: initialCharacter }: AppSidebarProps) {
   const pathname = usePathname();
-  const [character, setCharacter] = useState<Character>(DEFAULT_CHARACTER);
+  const router = useRouter();
+  const [character, setCharacter] = useState<Character>(initialCharacter || DEFAULT_CHARACTER);
   const [tasksToday, setTasksToday] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!initialCharacter);
 
-  // Fetch character data
+  // Fetch character data (refresh from API)
   useEffect(() => {
     async function fetchData() {
       try {
@@ -104,6 +114,12 @@ export function AppSidebar() {
     }
     fetchData();
   }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push("/login");
+    router.refresh();
+  };
 
   // Get rank based on level
   const getRank = (level: number): string => {
@@ -249,6 +265,16 @@ export function AppSidebar() {
           </div>
         </div>
       </div>
+
+      {/* Logout Button */}
+      <Button
+        variant="ghost"
+        onClick={handleSignOut}
+        className="w-full justify-start gap-2 h-9 px-3 font-mono text-xs tracking-wider text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+      >
+        <LogOut size={14} />
+        <span>LOGOUT</span>
+      </Button>
     </div>
   );
 }

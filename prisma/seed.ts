@@ -57,6 +57,44 @@ async function main() {
   });
   console.log("✅ Created character:", character.name);
 
+  // Create default task buckets for the user
+  const buckets = await Promise.all([
+    prisma.taskBucket.upsert({
+      where: { userId_name: { userId: user.id, name: "To Do" } },
+      update: {},
+      create: {
+        userId: user.id,
+        name: "To Do",
+        color: "#06b6d4",
+        sortOrder: 0,
+        isDefault: true,
+      },
+    }),
+    prisma.taskBucket.upsert({
+      where: { userId_name: { userId: user.id, name: "In Progress" } },
+      update: {},
+      create: {
+        userId: user.id,
+        name: "In Progress",
+        color: "#eab308",
+        sortOrder: 1,
+        isDefault: true,
+      },
+    }),
+    prisma.taskBucket.upsert({
+      where: { userId_name: { userId: user.id, name: "Done" } },
+      update: {},
+      create: {
+        userId: user.id,
+        name: "Done",
+        color: "#22c55e",
+        sortOrder: 2,
+        isDefault: true,
+      },
+    }),
+  ]);
+  console.log("✅ Created task buckets:", buckets.length);
+
   // Create areas (system-level)
   const areas = await Promise.all([
     prisma.area.upsert({

@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { askAI, AI_PROMPTS, AIMessage } from "@/lib/ai/client";
 
 // POST /api/ai/chat - Send a message to the AI
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get("x-user-id") || "demo-user";
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = user.id;
     const body = await request.json();
 
     const {

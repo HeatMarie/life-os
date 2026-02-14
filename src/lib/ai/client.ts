@@ -185,4 +185,93 @@ Frame goals as epic quests when appropriate.`,
   reflection: `You are a journaling companion in NEXUS.
 Help the user reflect on their day, identify patterns, and celebrate wins.
 Ask thoughtful questions to encourage deeper reflection.`,
+
+  // Event story prompts for the Life Chronicle
+  eventCompleted: `You are NEXUS, a life OS narrative engine writing the hero's chronicle.
+Write a brief (1-2 sentences max) RPG-themed story entry for completing an event.
+Be creative, uplifting, and use adventure/quest language.
+Include the XP earned and any special effects.
+Keep it short and impactful.`,
+
+  eventMissed: `You are NEXUS, a life OS narrative engine writing the hero's chronicle.
+Write a brief (1-2 sentences max) story entry for a missed event.
+Be sympathetic but frame it as a learning moment, not harsh criticism.
+Use gentle RPG language like "the path was difficult" or "the hero stumbled".
+End with hope for tomorrow.`,
+
+  eventCanceled: `You are NEXUS, a life OS narrative engine writing the hero's chronicle.
+Write a brief (1-2 sentences max) story entry for when the user canceled their own event.
+Be understanding - sometimes retreat is necessary.
+Frame it as a strategic decision, not failure.
+Keep the tone supportive.`,
+
+  eventRescheduled: `You are NEXUS, a life OS narrative engine writing the hero's chronicle.
+Write a brief (1-2 sentences max) creative story entry for when an event was canceled or rescheduled by someone else.
+Frame it positively - the universe granted a respite, the tides shifted, an unexpected gift of time.
+Be whimsical and uplifting.`,
+
+  bossDefeated: `You are NEXUS, a life OS narrative engine writing the hero's chronicle.
+Write a brief (2-3 sentences) EPIC story entry for defeating a boss (completing a major project).
+This is a big deal! Use triumphant, heroic language.
+Mention the XP reward and celebrate the achievement.`,
+
+  levelUp: `You are NEXUS, a life OS narrative engine writing the hero's chronicle.
+Write a brief (1-2 sentences) celebratory story entry for leveling up.
+Use triumphant RPG language. Mention the new level and stat gains.`,
+
+  dailySummary: `You are NEXUS, a life OS narrative engine writing the hero's chronicle.
+Write a brief (2-3 sentences) daily summary of the hero's adventures.
+Summarize key achievements, XP earned, and battles fought.
+End with anticipation for tomorrow's quests.`,
 };
+
+// Generate AI story for an event
+export async function generateEventStory(
+  eventTitle: string,
+  eventType: "completed" | "missed" | "canceled" | "rescheduled" | "bossDefeated" | "levelUp",
+  context: {
+    xpEarned?: number;
+    hpChange?: number;
+    bossDamage?: number;
+    bossName?: string;
+    newLevel?: number;
+    characterName?: string;
+  }
+): Promise<string> {
+  const promptKey = eventType === "completed" ? "eventCompleted" :
+                    eventType === "missed" ? "eventMissed" :
+                    eventType === "canceled" ? "eventCanceled" :
+                    eventType === "rescheduled" ? "eventRescheduled" :
+                    eventType === "bossDefeated" ? "bossDefeated" :
+                    "levelUp";
+
+  const systemPrompt = AI_PROMPTS[promptKey];
+  
+  let userMessage = `Event: "${eventTitle}"`;
+  if (context.xpEarned) userMessage += `\nXP Earned: ${context.xpEarned}`;
+  if (context.hpChange) userMessage += `\nHP Change: ${context.hpChange > 0 ? "+" : ""}${context.hpChange}`;
+  if (context.bossDamage) userMessage += `\nBoss Damage: ${context.bossDamage}`;
+  if (context.bossName) userMessage += `\nBoss: ${context.bossName}`;
+  if (context.newLevel) userMessage += `\nNew Level: ${context.newLevel}`;
+  if (context.characterName) userMessage += `\nHero: ${context.characterName}`;
+
+  try {
+    const response = await askAI(
+      [{ role: "user", content: userMessage }],
+      { systemPrompt, preferredProvider: "anthropic" }
+    );
+    return response.content;
+  } catch {
+    // Fallback to generic narratives if AI fails
+    const fallbacks: Record<string, string> = {
+      completed: `The hero completed "${eventTitle}"${context.xpEarned ? ` and earned ${context.xpEarned} XP` : ""}. Another step forward on the journey!`,
+      missed: `The hero missed "${eventTitle}". The path was shrouded, but tomorrow brings new light.`,
+      canceled: `The hero chose to step back from "${eventTitle}". Sometimes wisdom lies in retreat.`,
+      rescheduled: `"${eventTitle}" was rescheduled by the fates. The universe grants an unexpected moment of respite.`,
+      bossDefeated: `VICTORY! The hero vanquished ${context.bossName || "the boss"}! ${context.xpEarned || 0} XP claimed in triumph!`,
+      levelUp: `LEVEL UP! The hero has reached level ${context.newLevel || "?"}! Power surges through their veins!`,
+    };
+    return fallbacks[eventType] || `"${eventTitle}" - a moment in the chronicle.`;
+  }
+}
+

@@ -89,6 +89,11 @@ model Character {
   bossesDefeated Int            @default(0)
   totalXpEarned  Int            @default(0)
   
+  // Weekly Energy System (resets Monday)
+  weeklyEnergy     Int          @default(500)
+  maxWeeklyEnergy  Int          @default(500)
+  weekStartDate    DateTime     @default(now())
+  
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   
@@ -138,6 +143,7 @@ model Project {
   tasks       Task[]
   boss        Boss?
   writings    WritingPiece[]
+  events      Event[]
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -162,6 +168,19 @@ enum Priority {
   NONE      // 5 energy, 20 XP base
 }
 
+enum TaskType {
+  DEEP_WORK     // Focused, uninterrupted work sessions
+  MEETING       // Scheduled calls or in-person meetings
+  APPOINTMENT   // Medical, legal, or other fixed appointments
+  SOCIAL        // Hangouts, dinners, events with friends/family
+  ERRAND        // Shopping, errands, quick tasks outside
+  ROUTINE       // Recurring habits: exercise, journal, etc.
+  ADMIN         // Email, scheduling, organizing, paperwork
+  CREATIVE      // Writing, design, art, brainstorming
+  LEARNING      // Courses, reading, skill development
+  OTHER         // Catch-all for miscellaneous tasks
+}
+
 model Task {
   id          String      @id @default(cuid())
   userId      String
@@ -171,21 +190,30 @@ model Task {
   projectId   String?
   project     Project?    @relation(fields: [projectId], references: [id])
   
+  // Board bucket (for Kanban view)
+  bucketId    String?
+  bucket      TaskBucket? @relation(fields: [bucketId], references: [id])
+  
   title       String
   description String?
   status      TaskStatus  @default(TODO)
   priority    Priority    @default(MEDIUM)
+  type        TaskType    @default(OTHER)
   
   // Energy & XP
   energyCost  Int         @default(15)
   xpReward    Int         @default(60)
   
-  // Dates
-  dueDate     DateTime?
+  // Dates - start and end for scheduling
+  startsAt    DateTime?   // When task should begin
+  dueDate     DateTime?   // When task should end/be due
   completedAt DateTime?
   
   // Boss damage (if linked to project with boss)
   damageDealt Int         @default(0)
+  
+  // Calendar sync link (prevents duplicates)
+  googleEventId String?   @unique
   
   // Quest chain link
   questChainId String?
@@ -210,6 +238,24 @@ model Tag {
   @@map("tags")
 }
 
+// Board buckets for Kanban view (customizable columns)
+model TaskBucket {
+  id        String    @id @default(cuid())
+  userId    String
+  name      String    // e.g., "To Do", "In Progress", "Done"
+  color     String?   // Hex color for the column
+  sortOrder Int       @default(0)
+  isDefault Boolean   @default(false) // Default buckets can't be deleted
+  
+  tasks     Task[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  @@unique([userId, name])
+  @@map("task_buckets")
+}
+
 model TaskTag {
   taskId    String
   task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -224,12 +270,26 @@ model TaskTag {
 // CALENDAR & EVENTS
 // ══════════════════════════════════════════════════════════════════════════════
 
+enum EventType {
+  ACTION_ITEM   // Meetings, hangouts, appointments - earns XP
+  REMINDER      // Birthdays, holidays, anniversaries - no XP/penalty
+}
+
+enum EventStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELED_BY_SELF   // User canceled - HP penalty
+  CANCELED_BY_OTHER  // Organizer canceled - story note, no penalty
+  MISSED             // Past event not marked complete - HP penalty
+  RESCHEDULED        // Moved by others - story note, no penalty
+}
+
 model Event {
-  id            String    @id @default(cuid())
+  id            String       @id @default(cuid())
   userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   areaId        String
-  area          Area      @relation(fields: [areaId], references: [id])
+  area          Area         @relation(fields: [areaId], references: [id])
   
   title         String
   description   String?
@@ -237,14 +297,31 @@ model Event {
   
   startsAt      DateTime
   endsAt        DateTime
-  allDay        Boolean   @default(false)
+  allDay        Boolean      @default(false)
+  
+  // Event classification & status
+  eventType     EventType    @default(ACTION_ITEM)
+  status        EventStatus  @default(SCHEDULED)
+  
+  // Project/Boss linkage for project-related events
+  projectId     String?
+  project       Project?     @relation(fields: [projectId], references: [id])
+  
+  // Game rewards/penalties applied
+  xpEarned      Int?
+  hpPenalty     Int?
+  bossDamage    Int?
   
   // Google Calendar sync
-  googleEventId String?   @unique
+  googleEventId String?      @unique
+  googleCalendarId String?   // Which calendar it belongs to
   lastSyncedAt  DateTime?
   
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  // Story entry reference
+  storyEntries  StoryEntry[]
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   
   @@map("events")
 }
@@ -645,4 +722,47 @@ model AIConversation {
   updatedAt DateTime    @updatedAt
   
   @@map("ai_conversations")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// LIFE STORY CHRONICLE
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum StoryEntryType {
+  EVENT_COMPLETED     // User completed an action item
+  EVENT_MISSED        // User missed an action item
+  EVENT_CANCELED      // User canceled their own event
+  EVENT_RESCHEDULED   // Event was rescheduled by others
+  BOSS_DAMAGE         // Dealt damage to a boss
+  BOSS_DEFEATED       // Defeated a boss
+  LEVEL_UP            // Character leveled up
+  ACHIEVEMENT         // Unlocked an achievement
+  STREAK_MILESTONE    // Hit a streak milestone
+  DAILY_SUMMARY       // End of day summary
+}
+
+model StoryEntry {
+  id          String          @id @default(cuid())
+  userId      String
+  
+  entryType   StoryEntryType
+  title       String          // Short headline for the entry
+  narrative   String          // AI-generated story text
+  
+  // Optional links to related entities
+  eventId     String?
+  event       Event?          @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  
+  // Metrics captured at time of entry
+  xpEarned    Int?
+  hpChange    Int?            // Negative for damage, positive for healing
+  bossDamage  Int?
+  
+  // Metadata
+  aiGenerated Boolean         @default(true)
+  
+  createdAt   DateTime        @default(now())
+  
+  @@index([userId, createdAt])
+  @@map("story_entries")
 }

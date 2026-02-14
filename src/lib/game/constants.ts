@@ -270,3 +270,37 @@ export const HP_REGEN_PER_TASK = {
   LOW: 3,
   NONE: 2,
 } as const;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EVENT REWARDS & PENALTIES
+// ══════════════════════════════════════════════════════════════════════════════
+
+// XP for completing action items by duration (minutes)
+export const EVENT_XP = {
+  XP_PER_30_MINS: 25,     // Base XP per 30 minute block
+  MIN_XP: 15,              // Minimum XP for any event
+  MAX_XP: 150,             // Maximum XP for a single event
+} as const;
+
+// HP penalty for missing/canceling events
+export const EVENT_PENALTIES = {
+  MISSED_BASE: 12,         // Base HP damage for missing an event
+  CANCELED_SELF_BASE: 8,   // Base HP damage for self-canceling
+  HP_PER_HOUR: 5,          // Additional HP damage per hour of event
+  MAX_PENALTY: 25,         // Maximum HP penalty
+} as const;
+
+// Boss damage from completing project-linked events
+export const EVENT_BOSS_DAMAGE = {
+  DAMAGE_PER_30_MINS: 10,  // Boss damage per 30 minute block
+  MIN_DAMAGE: 5,           // Minimum boss damage
+  MAX_DAMAGE: 40,          // Maximum boss damage
+} as const;
+
+// HP restoration from completing events
+export const EVENT_HP_REGEN = {
+  BASE: 5,                 // Base HP restored
+  PER_HOUR: 2,             // Additional HP per hour
+  MAX: 15,                 // Maximum HP restored
+} as const;
+

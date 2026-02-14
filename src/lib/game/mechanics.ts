@@ -250,6 +250,11 @@ export function getBossDamage(priority: Priority, hasBossBane: boolean = false):
   return hasBossBane ? Math.floor(baseDamage * 1.5) : baseDamage;
 }
 
+// HP increase when a task is added to a project (boss grows stronger)
+export function getBossHPIncrease(priority: Priority): number {
+  return BOSS_DAMAGE_PER_TASK[priority] || BOSS_DAMAGE_PER_TASK.MEDIUM;
+}
+
 export function isBossDefeated(currentHP: number, damageDealt: number): boolean {
   return currentHP - damageDealt <= 0;
 }

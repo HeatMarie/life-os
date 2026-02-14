@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 // GET /api/bosses/[id] - Get a single boss
 export async function GET(
@@ -8,9 +9,14 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    const boss = await db.boss.findUnique({
-      where: { id },
+    const boss = await db.boss.findFirst({
+      where: { id, project: { userId: user.id } },
       include: {
         project: true,
       },

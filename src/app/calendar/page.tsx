@@ -37,10 +37,23 @@ import {
   X,
   Zap,
   CheckCircle,
+  Bell,
+  Target,
+  XCircle,
+  Swords,
+  Download,
 } from "lucide-react";
 
 // Types
 type ViewMode = "day" | "week" | "month";
+type EventType = "ACTION_ITEM" | "REMINDER";
+type EventStatus = "SCHEDULED" | "COMPLETED" | "CANCELED_BY_SELF" | "CANCELED_BY_OTHER" | "MISSED" | "RESCHEDULED";
+
+interface Project {
+  id: string;
+  name: string;
+  boss?: { id: string; name: string; hp: number; maxHp: number } | null;
+}
 
 interface CalendarEvent {
   id: string;
@@ -61,6 +74,14 @@ interface CalendarEvent {
   calendarColor?: string;
   googleEventId?: string;
   isFromGoogle?: boolean;
+  // Game fields
+  eventType?: EventType;
+  status?: EventStatus;
+  projectId?: string;
+  project?: Project | null;
+  xpEarned?: number;
+  hpPenalty?: number;
+  bossDamage?: number;
   // Task connection
   taskId?: string;
   xpReward?: number;
@@ -180,6 +201,8 @@ export default function CalendarPage() {
   const [calendars, setCalendars] = useState<GoogleCalendar[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   
   // Modal states
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -199,7 +222,11 @@ export default function CalendarPage() {
     areaId: "",
     createTask: true,
     xpReward: 50,
+    eventType: "ACTION_ITEM" as EventType,
+    projectId: "",
   });
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   // Get date range based on view mode
   const getDateRange = useCallback(() => {
@@ -236,6 +263,22 @@ export default function CalendarPage() {
         if (areasRes.ok) {
           const areasData = await areasRes.json();
           setAreas(areasData);
+        }
+        
+        // Fetch projects for linking
+        try {
+          const projectsRes = await fetch("/api/bosses");
+          if (projectsRes.ok) {
+            const bossData = await projectsRes.json();
+            // Get projects that have bosses
+            const projectsWithBosses = bossData.map((boss: { project: Project; id: string; name: string; hp: number; maxHp: number }) => ({
+              ...boss.project,
+              boss: { id: boss.id, name: boss.name, hp: boss.hp, maxHp: boss.maxHp },
+            }));
+            setProjects(projectsWithBosses);
+          }
+        } catch {
+          // Projects fetch is optional
         }
         
         // Check Google Calendar connection
@@ -335,6 +378,8 @@ export default function CalendarPage() {
       areaId: areas[0]?.id || "",
       createTask: true,
       xpReward: 50,
+      eventType: "ACTION_ITEM",
+      projectId: "",
     });
     setIsEditing(false);
     setIsFormOpen(true);
@@ -355,6 +400,8 @@ export default function CalendarPage() {
       areaId: selectedEvent.areaId || "",
       createTask: true,
       xpReward: selectedEvent.xpReward || 50,
+      eventType: selectedEvent.eventType || "ACTION_ITEM",
+      projectId: selectedEvent.projectId || "",
     });
     setIsEditing(true);
     setIsDetailOpen(false);
@@ -381,6 +428,8 @@ export default function CalendarPage() {
       areaId: formData.areaId,
       createTask: formData.createTask,
       xpReward: formData.xpReward,
+      eventType: formData.eventType,
+      projectId: formData.projectId || undefined,
     };
 
     try {
@@ -417,6 +466,89 @@ export default function CalendarPage() {
       }
     } catch (error) {
       console.error("Failed to delete event:", error);
+    }
+  };
+
+  // Sync Google Calendar events to local DB and create tasks
+  const handleSyncEvents = async () => {
+    setIsSyncing(true);
+    setSyncMessage(null);
+    
+    try {
+      const { start, end } = getDateRange();
+      // Sync 30 days from today for broader coverage
+      const syncStart = new Date();
+      const syncEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      
+      const res = await fetch("/api/calendar/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          timeMin: syncStart.toISOString(),
+          timeMax: syncEnd.toISOString(),
+          createTasks: true,
+        }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        const msg = `Synced! ${data.eventsImported} events imported, ${data.tasksCreated} quests created`;
+        setSyncMessage(msg);
+        
+        // Refresh the view to show imported events
+        const eventsRes = await fetch(`/api/events?start=${start.toISOString()}&end=${end.toISOString()}`);
+        if (eventsRes.ok) {
+          const eventsData = await eventsRes.json();
+          // Merge with Google events or replace local events
+          setEvents(eventsData);
+        }
+        
+        // Clear message after 5 seconds
+        setTimeout(() => setSyncMessage(null), 5000);
+      } else {
+        const errorData = await res.json();
+        setSyncMessage(`Sync failed: ${errorData.error || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Failed to sync events:", error);
+      setSyncMessage("Sync failed. Please try again.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Complete or update event status
+  const handleEventStatus = async (status: EventStatus) => {
+    if (!selectedEvent || selectedEvent.isFromGoogle) return;
+    
+    setIsCompleting(true);
+    try {
+      const res = await fetch(`/api/events/${selectedEvent.id}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        // Update event in state
+        setEvents(events.map(e => 
+          e.id === selectedEvent.id 
+            ? { ...e, ...data.event, status } 
+            : e
+        ));
+        setSelectedEvent({ ...selectedEvent, status });
+        setIsDetailOpen(false);
+        
+        // Show reward toast or notification
+        if (data.rewards?.xpEarned) {
+          console.log(`Earned ${data.rewards.xpEarned} XP!`);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to update event status:", error);
+    } finally {
+      setIsCompleting(false);
     }
   };
 
@@ -668,10 +800,26 @@ export default function CalendarPage() {
         </div>
         <div className="flex items-center gap-3">
           {isConnected ? (
-            <Button variant="ghost" size="sm" className="text-green-400">
-              <RefreshCw size={14} className="mr-2" />
-              Synced with Google
-            </Button>
+            <>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleSyncEvents}
+                disabled={isSyncing}
+                className="text-cyan-400 border-cyan-500/50 hover:bg-cyan-500/20"
+              >
+                {isSyncing ? (
+                  <Loader2 size={14} className="mr-2 animate-spin" />
+                ) : (
+                  <Download size={14} className="mr-2" />
+                )}
+                {isSyncing ? "Syncing..." : "Import Events"}
+              </Button>
+              <Button variant="ghost" size="sm" className="text-green-400">
+                <RefreshCw size={14} className="mr-2" />
+                Connected
+              </Button>
+            </>
           ) : (
             <Button
               variant="neon"
@@ -688,6 +836,17 @@ export default function CalendarPage() {
           </Button>
         </div>
       </div>
+      
+      {/* Sync Message */}
+      {syncMessage && (
+        <div className={`p-3 rounded-lg text-sm font-mono ${
+          syncMessage.includes("failed") 
+            ? "bg-red-500/20 text-red-400 border border-red-500/50" 
+            : "bg-green-500/20 text-green-400 border border-green-500/50"
+        }`}>
+          {syncMessage}
+        </div>
+      )}
 
       {/* View Toggle + Navigation */}
       <Card>
@@ -810,10 +969,21 @@ export default function CalendarPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              {/* Event type icon */}
+              {selectedEvent?.eventType === "REMINDER" ? (
+                <Bell size={18} className="text-blue-400" />
+              ) : (
+                <Target size={18} className="text-green-400" />
+              )}
               {selectedEvent?.title}
-              {selectedEvent?.xpReward && (
+              {selectedEvent?.eventType === "ACTION_ITEM" && selectedEvent?.status === "SCHEDULED" && (
                 <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Zap size={12} /> {selectedEvent.xpReward} XP
+                  <Zap size={12} /> XP
+                </span>
+              )}
+              {selectedEvent?.status === "COMPLETED" && (
+                <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle size={12} /> Done
                 </span>
               )}
             </DialogTitle>
@@ -838,6 +1008,25 @@ export default function CalendarPage() {
                     <span>{selectedEvent.calendarName}</span>
                   </div>
                 )}
+                {selectedEvent?.project && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Swords size={14} className="text-purple-400" />
+                    <span>
+                      Project: {selectedEvent.project.name}
+                      {selectedEvent.project.boss && (
+                        <span className="text-purple-400 ml-1">
+                          (Boss: {selectedEvent.project.boss.name})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+                {selectedEvent?.xpEarned && (
+                  <div className="flex items-center gap-2 text-sm text-green-400">
+                    <Zap size={14} />
+                    <span>+{selectedEvent.xpEarned} XP earned</span>
+                  </div>
+                )}
                 {selectedEvent?.description && (
                   <div className="text-sm text-muted-foreground border-t pt-3 mt-3 whitespace-pre-wrap">
                     {selectedEvent.description}
@@ -846,7 +1035,38 @@ export default function CalendarPage() {
               </div>
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex gap-2 sm:gap-0">
+          <DialogFooter className="flex flex-col gap-2 sm:flex-row">
+            {/* Action buttons for scheduled events */}
+            {!selectedEvent?.isFromGoogle && selectedEvent?.status === "SCHEDULED" && (
+              <>
+                {selectedEvent?.eventType === "ACTION_ITEM" && (
+                  <Button 
+                    variant="default" 
+                    size="sm" 
+                    onClick={() => handleEventStatus("COMPLETED")}
+                    disabled={isCompleting}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {isCompleting ? (
+                      <Loader2 size={14} className="mr-2 animate-spin" />
+                    ) : (
+                      <CheckCircle size={14} className="mr-2" />
+                    )}
+                    Complete (+XP)
+                  </Button>
+                )}
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => handleEventStatus("CANCELED_BY_SELF")}
+                  disabled={isCompleting}
+                  className="text-orange-400 hover:text-orange-300"
+                >
+                  <XCircle size={14} className="mr-2" />
+                  Cancel Event
+                </Button>
+              </>
+            )}
             {!selectedEvent?.isFromGoogle && (
               <>
                 <Button variant="ghost" size="sm" onClick={openEditForm}>
@@ -975,6 +1195,74 @@ export default function CalendarPage() {
                 rows={3}
               />
             </div>
+
+            {/* Event Type Selector */}
+            <div className="space-y-2">
+              <Label>Event Type</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={formData.eventType === "ACTION_ITEM" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFormData({ ...formData, eventType: "ACTION_ITEM" })}
+                  className={formData.eventType === "ACTION_ITEM" ? "bg-green-600 hover:bg-green-700" : ""}
+                >
+                  <Target size={14} className="mr-2" />
+                  Action Item
+                </Button>
+                <Button
+                  type="button"
+                  variant={formData.eventType === "REMINDER" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFormData({ ...formData, eventType: "REMINDER" })}
+                  className={formData.eventType === "REMINDER" ? "bg-blue-600 hover:bg-blue-700" : ""}
+                >
+                  <Bell size={14} className="mr-2" />
+                  Reminder
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {formData.eventType === "ACTION_ITEM" 
+                  ? "Earn XP for completing, take damage if missed" 
+                  : "Just a reminder - no XP or penalties"}
+              </p>
+            </div>
+
+            {/* Project/Boss Linking */}
+            {projects.length > 0 && formData.eventType === "ACTION_ITEM" && (
+              <div className="space-y-2">
+                <Label htmlFor="project">Link to Project (optional)</Label>
+                <Select
+                  value={formData.projectId}
+                  onValueChange={(v) => setFormData({ ...formData, projectId: v })}
+                >
+                  <SelectTrigger id="project">
+                    <SelectValue placeholder="No project linked" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No project</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        <span className="flex items-center gap-2">
+                          {project.boss && <Swords size={12} className="text-purple-400" />}
+                          {project.name}
+                          {project.boss && (
+                            <span className="text-xs text-purple-400">
+                              (Boss: {project.boss.hp}/{project.boss.maxHp} HP)
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formData.projectId && (
+                  <p className="text-xs text-purple-400">
+                    Completing this event will deal damage to the project boss!
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="border-t pt-4 space-y-3">
               <div className="flex items-center gap-2">

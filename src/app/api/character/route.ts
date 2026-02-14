@@ -1,41 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 // GET /api/character - Get current user's character
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    // TODO: Get user from session/auth
-    const userId = request.headers.get("x-user-id") || "demo-user";
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
 
     let character = await db.character.findUnique({
-      where: { userId },
+      where: { userId: user.id },
     });
 
-    // Create character if it doesn't exist
+    // If no character exists, return null (user needs to create one)
     if (!character) {
-      character = await db.character.create({
-        data: {
-          userId,
-          name: "Unknown Hero",
-          class: "WARRIOR",
-          level: 1,
-          xp: 0,
-          xpToNextLevel: 250,
-          hp: 100,
-          maxHp: 100,
-          energy: 100,
-          maxEnergy: 100,
-          energyRegenRate: 20,
-          status: "ALIVE",
-          currentStreak: 0,
-          longestStreak: 0,
-          streakProtection: 0,
-          tasksCompleted: 0,
-          bossesDefeated: 0,
-          totalXpEarned: 0,
-          deathCount: 0,
-        },
-      });
+      return NextResponse.json({ character: null });
     }
 
     // Check for energy regeneration based on time since last activity
@@ -50,7 +34,7 @@ export async function GET(request: NextRequest) {
       );
       if (energyRegen > 0 && character.energy < character.maxEnergy) {
         character = await db.character.update({
-          where: { userId },
+          where: { userId: user.id },
           data: {
             energy: Math.min(character.energy + energyRegen, character.maxEnergy),
             lastActiveAt: now,
@@ -72,11 +56,14 @@ export async function GET(request: NextRequest) {
 // PUT /api/character - Update character
 export async function PUT(request: NextRequest) {
   try {
-    const userId = request.headers.get("x-user-id") || "demo-user";
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const body = await request.json();
 
     const character = await db.character.update({
-      where: { userId },
+      where: { userId: user.id },
       data: {
         name: body.name,
         class: body.class,
@@ -93,15 +80,69 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// POST /api/character - Actions (rest, revive)
+// POST /api/character - Create character or perform actions (rest, revive)
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get("x-user-id") || "demo-user";
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const body = await request.json();
 
+    // Action: Create new character
+    if (body.name && body.class) {
+      // Check if character already exists
+      const existing = await db.character.findUnique({
+        where: { userId: user.id },
+      });
+
+      if (existing) {
+        return NextResponse.json(
+          { error: "Character already exists" },
+          { status: 400 }
+        );
+      }
+
+      // Validate class
+      const validClasses = ["WARRIOR", "MAGE", "ROGUE", "BARD"];
+      if (!validClasses.includes(body.class)) {
+        return NextResponse.json(
+          { error: "Invalid character class" },
+          { status: 400 }
+        );
+      }
+
+      const character = await db.character.create({
+        data: {
+          userId: user.id,
+          name: body.name,
+          class: body.class,
+          level: 1,
+          xp: 0,
+          xpToNextLevel: 250,
+          hp: 100,
+          maxHp: 100,
+          energy: 100,
+          maxEnergy: 100,
+          energyRegenRate: 20,
+          status: "ALIVE",
+          currentStreak: 0,
+          longestStreak: 0,
+          streakProtection: 0,
+          tasksCompleted: 0,
+          bossesDefeated: 0,
+          totalXpEarned: 0,
+          deathCount: 0,
+        },
+      });
+
+      return NextResponse.json(character, { status: 201 });
+    }
+
+    // Action: Rest
     if (body.action === "rest") {
       const character = await db.character.findUnique({
-        where: { userId },
+        where: { userId: user.id },
       });
 
       if (!character || character.status === "DEAD") {
@@ -113,7 +154,7 @@ export async function POST(request: NextRequest) {
 
       // Full rest restores 50% HP and 100% energy
       const updatedCharacter = await db.character.update({
-        where: { userId },
+        where: { userId: user.id },
         data: {
           hp: Math.min(
             character.hp + Math.floor(character.maxHp * 0.5),
@@ -129,7 +170,7 @@ export async function POST(request: NextRequest) {
 
     if (body.action === "revive") {
       const character = await db.character.findUnique({
-        where: { userId },
+        where: { userId: user.id },
       });
 
       if (!character || character.status !== "DEAD") {
@@ -142,7 +183,7 @@ export async function POST(request: NextRequest) {
       // Revive with 25% HP and 50% energy, lose 10% of total XP
       const xpLoss = Math.floor(character.totalXpEarned * 0.1);
       const updatedCharacter = await db.character.update({
-        where: { userId },
+        where: { userId: user.id },
         data: {
           hp: Math.floor(character.maxHp * 0.25),
           energy: Math.floor(character.maxEnergy * 0.5),

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppSidebar } from "@/components/app-sidebar";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,22 +19,31 @@ export const metadata: Metadata = {
   description: "Your life as an RPG. Complete quests, defeat bosses, level up.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const user = await getAuthenticatedUser();
+  const isAuthenticated = !!user;
+
   return (
     <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased cyber-grid`}
       >
-        <div className="flex min-h-screen">
-          <AppSidebar />
-          <main className="flex-1 overflow-auto">
+        {isAuthenticated ? (
+          <div className="flex min-h-screen">
+            <AppSidebar character={user.character} />
+            <main className="flex-1 overflow-auto">
+              {children}
+            </main>
+          </div>
+        ) : (
+          <main className="min-h-screen">
             {children}
           </main>
-        </div>
+        )}
       </body>
     </html>
   );

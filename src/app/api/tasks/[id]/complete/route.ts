@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import {
   generateLootDrop,
   calculateBossDamage,
@@ -16,7 +17,12 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const userId = request.headers.get("x-user-id") || "demo-user";
+    
+    const user = await getAuthenticatedUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const userId = user.id;
 
     // Get the task with project and project's boss
     const task = await db.task.findFirst({

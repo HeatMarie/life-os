@@ -1,22 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { classifyEvent } from "@/lib/game/event-classifier";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
+import {
+  createCalendarEvent,
+  refreshGoogleToken,
+} from "@/lib/google/calendar";
+
+// Helper to get valid Google access token
+async function getGoogleAccessToken(userId: string): Promise<string | null> {
+  const calendarSync = await db.calendarSync.findFirst({
+    where: {
+      userId,
+      provider: "GOOGLE",
+      isActive: true,
+    },
+  });
+
+  if (!calendarSync) return null;
+
+  let accessToken = calendarSync.accessToken;
+
+  // Check if token needs refresh
+  if (
+    calendarSync.tokenExpiresAt &&
+    calendarSync.tokenExpiresAt < new Date() &&
+    calendarSync.refreshToken
+  ) {
+    try {
+      const newTokens = await refreshGoogleToken(calendarSync.refreshToken);
+      accessToken = newTokens.access_token!;
+
+      await db.calendarSync.update({
+        where: { id: calendarSync.id },
+        data: {
+          accessToken: newTokens.access_token!,
+          tokenExpiresAt: newTokens.expiry_date
+            ? new Date(newTokens.expiry_date)
+            : null,
+        },
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  return accessToken;
+}
 
 // GET /api/events - List all events
 export async function GET(request: NextRequest) {
   try {
-    // Get user - in production, this would come from auth
-    const user = await db.user.findFirst();
+    const user = await getAuthenticatedUser();
     
     if (!user) {
-      return NextResponse.json([]);
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
     const start = searchParams.get("start");
     const end = searchParams.get("end");
+    const status = searchParams.get("status");
 
     const where: Record<string, unknown> = { userId: user.id };
+    
+    // Filter by status if provided
+    if (status) {
+      where.status = status;
+    }
     
     // If start/end range is provided
     if (start && end) {
@@ -42,6 +94,11 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         area: true,
+        project: true,
+        storyEntries: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
       orderBy: { startsAt: "asc" },
     });
@@ -56,21 +113,31 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/events - Create a new event (and optionally a linked task)
+// POST /api/events - Create a new event (and optionally sync to Google)
 export async function POST(request: NextRequest) {
   try {
-    // Get user - in production, this would come from auth
-    const user = await db.user.findFirst();
+    const user = await getAuthenticatedUser();
     
     if (!user) {
       return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
+        { error: "Unauthorized" },
+        { status: 401 }
       );
     }
 
     const body = await request.json();
-    const { createTask, xpReward, ...eventData } = body;
+    const { 
+      createTask, 
+      xpReward, 
+      syncToGoogle = true,
+      eventType: overrideEventType,
+      projectId,
+      ...eventData 
+    } = body;
+
+    // Auto-classify event type if not overridden
+    const classification = classifyEvent(eventData.title, eventData.description);
+    const eventType = overrideEventType || classification.eventType;
 
     // Create the event
     const event = await db.event.create({
@@ -83,11 +150,55 @@ export async function POST(request: NextRequest) {
         startsAt: new Date(eventData.startsAt),
         endsAt: new Date(eventData.endsAt),
         allDay: eventData.allDay || false,
+        eventType,
+        status: "SCHEDULED",
+        projectId: projectId || null,
       },
       include: {
         area: true,
+        project: true,
       },
     });
+
+    // Sync to Google Calendar if enabled
+    let googleEventId: string | null = null;
+    if (syncToGoogle) {
+      const accessToken = await getGoogleAccessToken(user.id);
+      if (accessToken) {
+        try {
+          const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const startDate = new Date(eventData.startsAt).toISOString().split("T")[0];
+          const endDate = new Date(eventData.endsAt).toISOString().split("T")[0];
+          const googleEvent = await createCalendarEvent(accessToken, "primary", {
+            summary: eventData.title,
+            description: eventData.description || undefined,
+            start: eventData.allDay 
+              ? { date: startDate }
+              : { dateTime: new Date(eventData.startsAt).toISOString(), timeZone },
+            end: eventData.allDay
+              ? { date: endDate }
+              : { dateTime: new Date(eventData.endsAt).toISOString(), timeZone },
+          });
+
+          googleEventId = googleEvent.id || null;
+
+          // Update event with Google ID
+          if (googleEventId) {
+            await db.event.update({
+              where: { id: event.id },
+              data: {
+                googleEventId,
+                googleCalendarId: "primary",
+                lastSyncedAt: new Date(),
+              },
+            });
+          }
+        } catch (syncError) {
+          console.error("Failed to sync event to Google Calendar:", syncError);
+          // Don't fail the request - event is still created locally
+        }
+      }
+    }
 
     // If createTask is true, also create a linked task
     let task = null;
@@ -103,11 +214,16 @@ export async function POST(request: NextRequest) {
           xpReward: xpReward || 50,
           energyCost: 15,
           dueDate: new Date(eventData.startsAt),
+          projectId: projectId || null,
         },
       });
     }
 
-    return NextResponse.json({ event, task }, { status: 201 });
+    return NextResponse.json({ 
+      event: { ...event, googleEventId },
+      task,
+      classification,
+    }, { status: 201 });
   } catch (error) {
     console.error("Error creating event:", error);
     return NextResponse.json(

@@ -73,6 +73,11 @@ export async function fetchCalendarEvents(
   return response.data.items || [];
 }
 
+// Google Calendar event time type (supports both dateTime and all-day date formats)
+type EventTime = 
+  | { dateTime: string; timeZone?: string }
+  | { date: string };
+
 // Create calendar event
 export async function createCalendarEvent(
   accessToken: string,
@@ -80,8 +85,8 @@ export async function createCalendarEvent(
   event: {
     summary: string;
     description?: string;
-    start: { dateTime: string; timeZone?: string };
-    end: { dateTime: string; timeZone?: string };
+    start: EventTime;
+    end: EventTime;
     colorId?: string;
   }
 ) {
@@ -103,8 +108,8 @@ export async function updateCalendarEvent(
   event: {
     summary?: string;
     description?: string;
-    start?: { dateTime: string; timeZone?: string };
-    end?: { dateTime: string; timeZone?: string };
+    start?: EventTime;
+    end?: EventTime;
   }
 ) {
   const calendar = getCalendarClient(accessToken);
