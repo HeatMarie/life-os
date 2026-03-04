@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AuthProvider } from "@/lib/auth-context";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import "./globals.css";
 
@@ -27,23 +28,50 @@ export default async function RootLayout({
   const user = await getAuthenticatedUser();
   const isAuthenticated = !!user;
 
+  // Build a serialisable AuthUser to pass as SSR seed data
+  const initialUser = user
+    ? {
+        id: user.id,
+        email: user.email,
+        name: user.name ?? null,
+        character: user.character
+          ? {
+              name: user.character.name,
+              class: user.character.class,
+              level: user.character.level,
+              xp: user.character.xp,
+              xpToNextLevel: user.character.xpToNextLevel,
+              hp: user.character.hp,
+              maxHp: user.character.maxHp,
+              energy: user.character.energy,
+              maxEnergy: user.character.maxEnergy,
+              currentStreak: user.character.currentStreak,
+              tasksCompleted: user.character.tasksCompleted,
+              status: user.character.status,
+            }
+          : null,
+      }
+    : null;
+
   return (
     <html lang="en" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased cyber-grid`}
       >
-        {isAuthenticated ? (
-          <div className="flex min-h-screen">
-            <AppSidebar character={user.character} />
-            <main className="flex-1 overflow-auto">
+        <AuthProvider initialUser={initialUser}>
+          {isAuthenticated ? (
+            <div className="flex min-h-screen">
+              <AppSidebar />
+              <main className="flex-1 overflow-auto">
+                {children}
+              </main>
+            </div>
+          ) : (
+            <main className="min-h-screen">
               {children}
             </main>
-          </div>
-        ) : (
-          <main className="min-h-screen">
-            {children}
-          </main>
-        )}
+          )}
+        </AuthProvider>
       </body>
     </html>
   );
