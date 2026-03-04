@@ -138,7 +138,7 @@ The application has a **solid foundation** with most core game mechanics impleme
 - `Rarity`: COMMON, RARE, EPIC, LEGENDARY
 - `GuildRole`: LEADER, OFFICER, MEMBER (planned)
 - `QuestType`: MAIN_QUEST, DAILY_QUEST, SIDE_QUEST (planned)
-- `DifficultTier`: CASUAL, BALANCED, HARDCORE (planned)
+- `DifficultyTier`: CASUAL, BALANCED, HARDCORE (planned)
 
 ---
 
