@@ -451,8 +451,9 @@ model GuildActivity {
 ## Conventions
 
 ### API Routes
-- Use `requireAuth()` helper for all protected routes — throws 401 on unauthenticated
-- Return proper HTTP status codes
+- Use `requireAuth()` helper for all protected routes — it throws on unauthenticated; route handlers must ensure this results in an HTTP 401 response
+- Alternatively, use `getAuthenticatedUser()` and return a `NextResponse` with `{ status: 401 }` when unauthenticated
+- For unauthenticated requests, always return HTTP 401 Unauthorized (do not rely on a generic thrown `Error` automatically mapping to 401)
 - Include character/game state updates in transaction
 - For guild routes, verify membership and role permissions
 
