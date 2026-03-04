@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { CharacterClass } from "@prisma/client";
 
 // GET /api/character - Get current user's character
 export async function GET() {
@@ -104,7 +105,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Validate class
-      const validClasses = ["WARRIOR", "MAGE", "ROGUE", "BARD"];
+      const validClasses = Object.values(CharacterClass);
       if (!validClasses.includes(body.class)) {
         return NextResponse.json(
           { error: "Invalid character class" },

@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import Link from "next/link";
+import { getAuthenticatedUser, getSupabaseUser } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 // Helper to get streak multiplier
 function getStreakMultiplier(streak: number): string {
@@ -86,13 +88,39 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  // Fetch data from database
-  const userId = "demo-user"; // TODO: Get from auth session
+  // Get the authenticated user from Supabase session
+  let authUser = await getAuthenticatedUser();
 
-  // Fetch character
-  const character = await db.character.findUnique({
-    where: { userId },
-  });
+  // If no auth user, check if there's a Supabase session
+  if (!authUser) {
+    const supabaseUser = await getSupabaseUser();
+
+    // If no Supabase session, truly unauthenticated - redirect to login
+    if (!supabaseUser) {
+      redirect("/login");
+    }
+
+    // Supabase user exists but no DB user - create it (edge case: race condition or missing user record)
+    authUser = await db.user.create({
+      data: {
+        supabaseId: supabaseUser.id,
+        email: supabaseUser.email!,
+        name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
+        avatarUrl: supabaseUser.user_metadata?.avatar_url || null,
+      },
+      include: { character: true },
+    });
+  }
+
+  // If user has no character, send them to character creation
+  if (!authUser.character) {
+    redirect("/character/create");
+  }
+
+  const userId = authUser.id;
+
+  // Character is already loaded by getAuthenticatedUser (includes character relation)
+  const character = authUser.character;
 
   // Fetch tasks
   const tasks = await db.task.findMany({
