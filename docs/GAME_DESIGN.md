@@ -125,9 +125,9 @@ Players receive **3 stat points per level-up** to distribute freely.
 
 ### Overview
 
-**42 total abilities** across 7 classes, 6 per class. Abilities are grouped into **3 difficulty tiers** (2 abilities per tier per class). Higher-tier abilities require the character to have at least one lower-tier ability from the same class active.
+**42 total abilities** across 7 classes, 6 per class. Abilities are grouped into **3 ability tiers** (2 abilities per tier per class). Higher-tier abilities require the character to have at least one lower-tier ability from the same class active.
 
-### Difficulty Tier Requirements
+### Ability Tier Requirements
 
 | Tier | Name | Unlock Level | Requirement |
 |------|------|-------------|-------------|
