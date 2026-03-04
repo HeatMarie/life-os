@@ -1,68 +1,47 @@
 # Current Development Task
 
-## Phase 1, Task 1.1: Supabase Auth Helpers ✅ COMPLETE
+## Phase 1, Task 1.5: Session Provider ⬅️ CURRENT
 
 ### Objective
-Create authentication helper functions that retrieve the authenticated user from Supabase session and return corresponding database user with character data.
+Add a client-side Supabase session provider to the app layout so that client components can access auth state without prop-drilling. Add a user menu to the sidebar with a logout button.
 
-### Files Modified
-- `src/lib/supabase/server.ts` - Added `getAuthenticatedUser()` and `requireAuth()` functions
+### Files to Modify / Create
+- `src/app/layout.tsx` - Wrap app with session provider
+- `src/components/providers/supabase-provider.tsx` - Client-side auth context provider
+- `src/hooks/use-auth.ts` (or `src/lib/supabase/auth-context.tsx`) - Auth context hook
+- `src/components/app-sidebar.tsx` - Add user menu with name, avatar, and logout button
 
-### Implementation
-```typescript
-export async function getAuthenticatedUser() {
-  const supabase = await createClient()
-  const { data: { user: supabaseUser }, error } = await supabase.auth.getUser()
-  
-  if (error || !supabaseUser) return null
-  
-  const user = await db.user.findUnique({
-    where: { supabaseId: supabaseUser.id },
-    include: { character: true }
-  })
-  
-  return user
-}
-
-export async function requireAuth() {
-  const user = await getAuthenticatedUser()
-  if (!user) throw new Error('Unauthorized')
-  return user
-}
-```
+### Requirements
+1. Supabase session provider wraps all pages (client-side session access)
+2. `useAuth()` hook returns `{ user, session, loading }` from any client component
+3. User menu in sidebar shows: character name / email, avatar (if set), logout button
+4. Logout clears Supabase session and redirects to `/login`
+5. Loading state handled gracefully (skeleton or spinner until session resolves)
 
 ### Acceptance Criteria
-- [x] Function returns null when not authenticated
-- [x] Function returns User with Character when authenticated
-- [x] Handles missing database user gracefully
-- [x] TypeScript types are correct
-- [x] `requireAuth()` helper throws on unauthenticated
+- [ ] Session provider added to `src/app/layout.tsx`
+- [ ] `useAuth()` hook works in any client component
+- [ ] User menu visible in sidebar when authenticated
+- [ ] Logout button signs out and redirects to `/login`
+- [ ] No hydration errors (server/client auth state matches)
+- [ ] TypeScript types are correct
 
 ---
 
-## Next Task: Phase 1, Task 1.2 - Auth Pages
+## Recently Completed: Phase 1, Tasks 1.1–1.4
 
-### Objective
-Create authentication pages for login and registration with email/password and Google OAuth support.
+### Task 1.4: Migrate API Routes ✅
+All API routes updated to use `requireAuth()` from `src/lib/supabase/server.ts`.
 
-### Files to Create
-- `src/app/(auth)/layout.tsx` - Centered card layout for auth pages
-- `src/app/(auth)/login/page.tsx` - Login form with email/password + Google
-- `src/app/(auth)/register/page.tsx` - Registration form
-- `src/app/(auth)/callback/route.ts` - OAuth callback handler
+### Task 1.3: Auth Middleware ✅
+`src/middleware.ts` protects all routes, redirects unauthenticated users to `/login`.
 
-### Requirements
-1. Clean, minimal auth UI using shadcn/ui Card component
-2. Email/password login with validation
-3. Google OAuth button
-4. Links between login/register pages
-5. Error handling and loading states
-6. Redirect to dashboard on success
+### Task 1.2: Auth Pages ✅
+- `src/app/(auth)/layout.tsx` — centered card layout
+- `src/app/(auth)/login/page.tsx` — email/password + Google OAuth
+- `src/app/(auth)/register/page.tsx` — registration form
+- `src/app/(auth)/callback/route.ts` — OAuth callback handler
 
-### Acceptance Criteria
-- [ ] Users can register with email/password
-- [ ] Users can login with email/password
-- [ ] Users can login with Google OAuth
-- [ ] Appropriate error messages shown
-- [ ] Loading states during auth operations
-- [ ] Redirects work correctly
+### Task 1.1: Supabase Auth Helpers ✅
+- `getAuthenticatedUser()` — returns User with Character, or null
+- `requireAuth()` — throws 401 if not authenticated

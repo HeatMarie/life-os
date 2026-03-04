@@ -1,6 +1,6 @@
 # Life-OS: AI Development Guide
 
-> Last Updated: February 9, 2026
+> Last Updated: March 2026
 
 ## Project Vision
 
@@ -12,7 +12,7 @@ Life-OS is a **gamified life/project management application** that transforms pr
 
 ## Current State
 
-The application has a **solid foundation** with most core game mechanics implemented:
+The application has a **solid foundation** with most core game mechanics implemented and authentication fully wired up.
 
 ### ✅ Fully Implemented
 - XP/Level progression system with streak multipliers
@@ -27,21 +27,28 @@ The application has a **solid foundation** with most core game mechanics impleme
 - AI-powered life chronicle/story generation
 - Kanban board with buckets
 - Quest chain data structure
+- **Supabase auth helpers** (`getAuthenticatedUser`, `requireAuth`)
+- **Auth pages** (login, register, Google OAuth, callback)
+- **Auth middleware** (route protection, redirect to /login)
+- **All API routes** migrated to use `requireAuth`
 
 ### ⚠️ Partially Implemented
-- **Authentication**: Supabase configured but API routes use hardcoded user lookup
+- **Session Provider**: Auth helpers exist server-side; no client-side auth context or user menu in sidebar yet (Task 1.5)
 - **Daily challenges**: Model exists, generation logic defined, not fully integrated
 - **Inventory usage**: Items collected but no "use item" mechanics
 - **Character death UI**: Logic exists, limited user-facing experience
 
 ### ❌ Not Yet Implemented
-- User registration/login flow
-- Equipment system (slots, stat bonuses)
-- Stat points allocation on level up
-- Quest type classification (Main/Daily/Side)
+- Session provider / client-side auth context
+- 3 additional character classes (DRUID, CLERIC, NECROMANCER)
+- Stat system (5 allocatable stats: STR, FOC, DIS, CHA, LCK + Vitality derived)
+- Ability system (42 abilities across 7 classes, 3 difficulty tiers)
+- Equipment system (6 slots, class sets, +5 upgrade cap)
+- Gold economy and shop
+- Quest type classification (MAIN_QUEST, DAILY_QUEST, SIDE_QUEST)
 - Boss attack mechanics on missed deadlines
-- Game depth settings (feature toggles)
-- Character creation wizard
+- Difficulty tier settings (Casual/Balanced/Hardcore)
+- Character creation wizard (7-class selection with previews)
 - Avatar/appearance customization
 - **Guilds/Parties system**
 - **Shared projects and bosses**
@@ -75,10 +82,10 @@ The application has a **solid foundation** with most core game mechanics impleme
 - `src/lib/game/event-classifier.ts` - Classifies calendar events
 
 ### Authentication
-- `src/lib/supabase/server.ts` - Server-side Supabase client + auth helpers
+- `src/lib/supabase/server.ts` - Server-side Supabase client + `getAuthenticatedUser()` + `requireAuth()`
 - `src/lib/supabase/client.ts` - Client-side Supabase client
-- `src/middleware.ts` - Route protection
-- `src/app/(auth)/` - Login/register pages
+- `src/middleware.ts` - Route protection (redirects unauthenticated users to /login)
+- `src/app/(auth)/` - Login, register, callback pages
 
 ### API Routes
 - `src/app/api/character/route.ts` - Character CRUD, rest/revive actions
@@ -96,7 +103,7 @@ The application has a **solid foundation** with most core game mechanics impleme
 ## Database Schema Overview
 
 ### Core Models
-- **User** → owns everything, linked to Supabase auth
+- **User** → owns everything, linked to Supabase auth (`supabaseId`)
 - **Character** → name, class, level, xp, hp, energy, streak, status
 - **Task** → title, priority, type, bucketId, xpReward, energyCost, questChainId
 - **Project** → name, deadline, linked Boss
@@ -109,6 +116,13 @@ The application has a **solid foundation** with most core game mechanics impleme
 - **QuestChain** → multi-step quest narratives
 - **DailyChallenge** → daily objectives
 
+### Planned Models (Stats & Equipment)
+- **Stats** → statPoints per character (STR, FOC, DIS, CHA, LCK)
+- **Equipment** → active equipped items per character (6 slots)
+- **EquipmentItem** → item definitions with stat bonuses and rarity
+- **GameSettings** → difficulty tier and feature toggles per user
+- **ShopItem** → purchasable items and their Gold costs
+
 ### Planned Models (Guilds)
 - **Guild** → name, description, level, xp, inviteCode, settings
 - **GuildMember** → userId, guildId, role (LEADER/OFFICER/MEMBER), joinedAt
@@ -117,12 +131,14 @@ The application has a **solid foundation** with most core game mechanics impleme
 - **GuildActivity** → activity feed for guild actions
 
 ### Enums
-- `CharacterClass`: WARRIOR, MAGE, ROGUE, BARD
+- `CharacterClass`: WARRIOR, MAGE, ROGUE, BARD, DRUID, CLERIC, NECROMANCER
 - `Priority`: URGENT, HIGH, MEDIUM, LOW, NONE
 - `TaskType`: DEEP_WORK, MEETING, APPOINTMENT, SOCIAL, ERRAND, ROUTINE, ADMIN, CREATIVE, LEARNING, OTHER
 - `ItemType`: XP_SHARD, XP_CRYSTAL, STREAK_SHIELD, ENERGY_POTION, DOUBLE_XP_TOKEN, BOSS_BANE, HEALTH_POTION, REVIVE_TOKEN
 - `Rarity`: COMMON, RARE, EPIC, LEGENDARY
 - `GuildRole`: LEADER, OFFICER, MEMBER (planned)
+- `QuestType`: MAIN_QUEST, DAILY_QUEST, SIDE_QUEST (planned)
+- `DifficultTier`: CASUAL, BALANCED, HARDCORE (planned)
 
 ---
 
@@ -147,7 +163,75 @@ URGENT: 25, HIGH: 20, MEDIUM: 15, LOW: 10, NONE: 5
 URGENT: 20, HIGH: 15, MEDIUM: 10, LOW: 5, NONE: 3
 ```
 
-### Planned Guild Constants
+### Stat System (Planned)
+
+5 allocatable stats + 1 derived:
+
+```typescript
+// Allocatable stats (3 points per level-up)
+STR  (Strength)   → +1% XP from URGENT/HIGH per point, +0.5% boss damage
+FOC  (Focus)      → +1% XP all tasks per point, –5% distraction penalty per 5pts
+DIS  (Discipline) → –2% energy cost per point (cap –40%), +1% HP regen rate
+CHA  (Charisma)   → +1% XP from Social/Meeting per point, +1 streak shield per 10
+LCK  (Luck)       → +0.5% loot drop rate per point, +0.25% bonus XP roll chance
+
+// Derived stat (auto-calculated)
+Vitality = 10 + (level × 2) + (DIS × 1)  // → determines max HP
+```
+
+### Ability System (Planned)
+
+42 abilities total — 7 classes × 6 abilities each, grouped into 3 difficulty tiers (2 per tier):
+
+```typescript
+// Unlock levels
+Tier 1 (Apprentice): levels 5 and 10
+Tier 2 (Journeyman): levels 15 and 20  (requires 1 Tier 1 ability)
+Tier 3 (Master):     levels 25 and 30  (requires 1 Tier 2 ability)
+```
+
+Full ability list in `docs/GAME_DESIGN.md` Section 4.
+
+### Equipment System (Planned)
+
+6 equipment slots: HEAD, CHEST, HANDS, FEET, WEAPON, ACCESSORY
+
+```typescript
+// Stat bonus ranges by rarity
+COMMON:    +1–3 to one stat
+RARE:      +3–6 to one stat | +2–3 to two stats
+EPIC:      +6–10 to one stat | +4–6 to two stats
+LEGENDARY: +10–15 to one stat | +6–10 to two stats
+
+// Upgrade levels
++1 to +5 max, costs Gold + crafting materials (Iron Scrap, Boss Core)
+```
+
+Each class has a **6-piece set** with set bonuses at 3/6 items equipped.
+
+### Difficulty Tiers (Planned)
+
+| Setting | Casual | Balanced | Hardcore |
+|---------|--------|----------|---------|
+| Boss attacks | Off | On (daily) | On (hourly) |
+| Character death | Off | On | On + XP penalty |
+| Stat allocation | Off | On | On, no free reset |
+| Abilities | Off | On | On |
+| Streak shields | On | On | Off |
+
+### Gold Economy (Planned)
+
+```typescript
+// Gold earned per event
+Level-up:           50 + (5 per 5 levels)
+Boss defeat:        100–500 (scales with difficulty)
+Achievement unlock: 25–200
+7-day streak:       50
+30-day streak:      200
+```
+
+### Guild Constants (Planned)
+
 ```typescript
 // Guild XP per member task completion
 GUILD_XP_PER_TASK: 10
@@ -155,15 +239,14 @@ GUILD_XP_PER_TASK: 10
 // Guild level formula
 guildXpForLevel = 1000 × level^1.8
 
-// Guild size limits by level
-GUILD_SIZE_BASE: 5
-GUILD_SIZE_PER_LEVEL: 2  // +2 max members per guild level
+// Guild size
+maxMembers = 5 + (guildLevel × 2)
 
 // Guild perks by level
-Level 2: +5% XP bonus for all members
-Level 5: Shared loot pool unlocked
+Level 2:  +5% XP bonus for all members
+Level 5:  Shared loot pool unlocked
 Level 10: Guild challenges unlocked
-Level 15: +10% XP bonus, guild achievements
+Level 15: +10% XP bonus + guild achievements
 Level 20: Custom guild cosmetics
 ```
 
@@ -171,59 +254,38 @@ Level 20: Custom guild cosmetics
 
 ## Implementation Phases
 
-### Phase 1: Authentication & Multi-User ⬅️ CURRENT
-1. Complete Supabase auth helpers (getUser from session)
-2. Create login/register pages
-3. Build auth middleware for API routes
-4. Migrate all API routes from hardcoded user
-5. Add session provider to layout
+See `docs/GAME_DESIGN.md` Section 13 for full task breakdowns.
+
+### Phase 1: Authentication & Multi-User ✅ MOSTLY COMPLETE
+- Tasks 1.1–1.4 complete
+- **Task 1.5** (Session Provider) ⬅️ CURRENT
 
 ### Phase 2: Character Stats & Equipment
-1. Add Stats model (focus, vitality, discipline, charisma)
-2. Add statPoints to Character (3 per level up)
-3. Create Equipment and EquipmentItem models
-4. Define stat effect calculations
-5. Build stat allocation UI
-6. Implement equipment drops and equip mechanics
+Add 7-class enum, Stats model, Equipment models, stat allocation UI, equipment UI
 
-### Phase 3: Quest Type System
-1. Add questType enum to Task (MAIN_QUEST, DAILY_QUEST, SIDE_QUEST)
-2. Create DailyHabit model for recurring habits
-3. Build habits API and UI
-4. Implement AI-suggested daily challenges
-5. Update task creation with quest type selector
+### Phase 3: Ability System
+Define 42 abilities, add Ability and CharacterAbility models, ability selection UI
 
-### Phase 4: Boss Attack & Stakes
-1. Create deadline monitoring system
-2. Implement boss attack on overdue tasks
-3. Add attack notifications with drama
-4. Enhance death/respawn UI experience
+### Phase 4: Quest Type System
+MAIN_QUEST/DAILY_QUEST/SIDE_QUEST types, DailyHabit model, AI daily challenges
 
-### Phase 5: Game Depth Settings
-1. Create GameSettings model with feature toggles
-2. Build settings page UI
-3. Apply conditional logic throughout app
-4. Add presets (Casual, Balanced, Hardcore)
+### Phase 5: Boss Attack & Stakes
+Deadline monitoring, boss attacks on overdue tasks, death/respawn UI
 
-### Phase 6: Character Creation Wizard
-1. Build multi-step character creation flow
-2. Class selection with bonus preview
-3. Game depth preset during onboarding
-4. Initial goals setup
+### Phase 6: Game Depth Settings (Difficulty Tiers)
+GameSettings model, Casual/Balanced/Hardcore presets, conditional logic throughout app
 
-### Phase 7: Guilds & Social Features
-1. Create Guild, GuildMember, GuildProject models
-2. Guild creation and invite system
-3. Shared project/boss mechanics
-4. Guild challenges and XP
-5. Guild activity feed
-6. Guild management UI
+### Phase 7: Character Creation Wizard
+7-class selection with previews, difficulty tier selection, onboarding tutorial
 
-### Phase 8: Avatar Builder (Future)
-1. Preset appearance options
-2. Class-themed outfits
-3. Equipment reflected on avatar
-4. Guild emblems/colors
+### Phase 8: Guilds & Social Features
+Full guild system, shared bosses, guild XP/leveling, activity feed
+
+### Phase 9: Gold Economy & Shop
+Gold rewards, Shop API, `/shop` page, stat resets, streak revives
+
+### Phase 10: Avatar Builder
+Preset appearances, class outfits, equipment visual reflection, guild emblems
 
 ---
 
@@ -368,20 +430,28 @@ model GuildActivity {
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Auth provider | Supabase Auth | Already configured, PostgreSQL integration |
-| Stats approach | Gameplay-affecting with toggles | User can choose depth |
+| Character classes | 7 classes (WARRIOR, MAGE, ROGUE, BARD, DRUID, CLERIC, NECROMANCER) | Full RPG class diversity; each maps to a life domain |
+| Stats approach | 5 allocatable stats + 1 derived (Vitality) | Player agency in build without overwhelming complexity |
+| Stat points per level | 3 points | Meaningful choice each level without being overwhelming |
+| Ability count | 42 (7 classes × 6 abilities, 3 tiers) | Rich customization; 2 per tier keeps choices meaningful |
+| Equipment slots | 6 slots (HEAD, CHEST, HANDS, FEET, WEAPON, ACCESSORY) | Full RPG feel without inventory micromanagement |
+| Equipment class sets | 7 sets with 3-piece and 6-piece bonuses | Incentivizes class identity in gear choices |
+| Gold economy | In-game only (no real money) | Keeps game fair; Gold earned through play |
+| Difficulty tiers | Casual / Balanced / Hardcore | Users control complexity; Casual removes punishment, Hardcore adds stakes |
 | Daily quests | User habits + AI suggestions | Flexibility + engagement |
-| Equipment slots | 6 slots | Full RPG feel |
-| Game depth | Granular toggles | Users control complexity |
-| Avatars | Deferred to Phase 8 | Nice-to-have, not core |
+| Quest types | MAIN_QUEST / DAILY_QUEST / SIDE_QUEST | Maps to real productivity concepts (projects, habits, tasks) |
+| Avatars | Deferred to Phase 10 | Nice-to-have, not core; class outfits as first avatar feature |
 | Guild naming | "Guild" (not "Party") | Scales from family to large teams |
 | Guild projects | Opt-in per project | Users control what's shared |
+| Boss escape penalty | HP damage (not instant death) | Fair punishment without game-breaking consequences |
+| Stat reset | 1 free lifetime, then 500 Gold | Allows experimentation; Gold cost prevents frivolous resets |
 
 ---
 
 ## Conventions
 
 ### API Routes
-- Use `getAuthenticatedUser()` helper for user lookup
+- Use `requireAuth()` helper for all protected routes — throws 401 on unauthenticated
 - Return proper HTTP status codes
 - Include character/game state updates in transaction
 - For guild routes, verify membership and role permissions
@@ -391,6 +461,7 @@ model GuildActivity {
 - Create StoryEntry for significant events
 - Check achievements after state changes
 - For shared bosses, distribute rewards proportionally or equally (TBD)
+- All new stats/ability effects should be implemented in `lib/game/` (not scattered in API routes)
 
 ### UI Patterns
 - Use shadcn/ui components from `src/components/ui/`
@@ -402,6 +473,6 @@ model GuildActivity {
 
 ## Current Task
 
-**Phase 1, Task 1.1**: Complete Supabase auth helpers
+**Phase 1, Task 1.5**: Add Session Provider
 
 See `docs/tasks/CURRENT.md` for detailed requirements.
