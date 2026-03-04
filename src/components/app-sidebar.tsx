@@ -108,6 +108,7 @@ export function AppSidebar() {
       console.error("Sign out failed:", error);
     }
     router.push("/login");
+    router.refresh();
   };
 
   // Get rank based on level
