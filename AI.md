@@ -181,13 +181,13 @@ Vitality = 10 + (level × 2) + (DIS × 1)  // → determines max HP
 
 ### Ability System (Planned)
 
-42 abilities total — 7 classes × 6 abilities each, grouped into 3 difficulty tiers (2 per tier):
+42 abilities total — 7 classes × 6 abilities each, grouped into 3 ability tiers (2 per tier):
 
 ```typescript
-// Unlock levels
-Tier 1 (Apprentice): levels 5 and 10
-Tier 2 (Journeyman): levels 15 and 20  (requires 1 Tier 1 ability)
-Tier 3 (Master):     levels 25 and 30  (requires 1 Tier 2 ability)
+// Unlock levels by ability tier
+Ability Tier 1 (Apprentice): levels 5 and 10
+Ability Tier 2 (Journeyman): levels 15 and 20  (requires 1 Tier 1 ability)
+Ability Tier 3 (Master):     levels 25 and 30  (requires 1 Tier 2 ability)
 ```
 
 Full ability list in `docs/GAME_DESIGN.md` Section 4.
