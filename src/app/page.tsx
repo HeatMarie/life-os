@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import Link from "next/link";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 // Helper to get streak multiplier
 function getStreakMultiplier(streak: number): string {
@@ -86,13 +88,22 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  // Fetch data from database
-  const userId = "demo-user"; // TODO: Get from auth session
+  // Get the authenticated user from Supabase session
+  const authUser = await getAuthenticatedUser();
 
-  // Fetch character
-  const character = await db.character.findUnique({
-    where: { userId },
-  });
+  if (!authUser) {
+    redirect("/login");
+  }
+
+  // If user has no character, send them to character creation
+  if (!authUser.character) {
+    redirect("/character/create");
+  }
+
+  const userId = authUser.id;
+
+  // Character is already loaded by getAuthenticatedUser (includes character relation)
+  const character = authUser.character;
 
   // Fetch tasks
   const tasks = await db.task.findMany({
