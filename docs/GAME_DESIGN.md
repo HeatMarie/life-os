@@ -389,7 +389,7 @@ xpRequiredForLevel(n) = 250 × n^1.5
 
 Applied on top of base XP for relevant task types:
 
-- All classes: +25% XP for their domain tasks
+- Most classes: +25% XP for their domain tasks; Necromancer: +10% XP on all tasks (no domain bonus)
 - Each Focus stat point: +1% XP on all tasks
 - Each Strength stat point: +1% XP on URGENT/HIGH tasks
 
