@@ -86,7 +86,7 @@ Each class has a **primary stat** that scales better with class-specific activit
 
 ### Overview
 
-Characters have **6 stats total**: 5 allocatable stats that players assign points to on level-up, and 1 derived stat (Vitality) that is calculated from the character's level and base class.
+Characters have **6 stats total**: 5 allocatable stats that players assign points to on level-up, and 1 derived stat (Vitality) that is calculated from the character's level and Discipline (DIS).
 
 ### Allocatable Stats (5)
 
