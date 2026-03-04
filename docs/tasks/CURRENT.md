@@ -31,7 +31,7 @@ Add a client-side Supabase session provider to the app layout so that client com
 ## Recently Completed: Phase 1, Tasks 1.1–1.4
 
 ### Task 1.4: Migrate API Routes ✅
-All API routes updated to use `requireAuth()` from `src/lib/supabase/server.ts`.
+API routes currently use `getAuthenticatedUser()` with manual 401 handling; migration to `requireAuth()` from `src/lib/supabase/server.ts` is planned.
 
 ### Task 1.3: Auth Middleware ✅
 `src/middleware.ts` protects all routes, redirects unauthenticated users to `/login`.
