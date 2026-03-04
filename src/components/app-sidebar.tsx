@@ -21,6 +21,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 
 // Character type from API
 interface Character {
@@ -36,11 +37,6 @@ interface Character {
   currentStreak: number;
   tasksCompleted: number;
   status: string;
-}
-
-// Props for the sidebar
-interface AppSidebarProps {
-  character?: Character | null;
 }
 
 // Default character for loading state
@@ -78,45 +74,39 @@ const NAV_ITEMS: NavItem[] = [
   { id: "achievements", label: "TROPHIES", icon: Trophy, href: "/achievements" },
 ];
 
-export function AppSidebar({ character: initialCharacter }: AppSidebarProps) {
+export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [character, setCharacter] = useState<Character>(initialCharacter || DEFAULT_CHARACTER);
+  const { user, character: authCharacter, loading } = useAuth();
+  const character = authCharacter ?? DEFAULT_CHARACTER;
   const [tasksToday, setTasksToday] = useState(0);
-  const [isLoading, setIsLoading] = useState(!initialCharacter);
 
-  // Fetch character data (refresh from API)
+  // Fetch tasks-today count for the combo stat
   useEffect(() => {
-    async function fetchData() {
+    async function fetchTasksToday() {
       try {
-        // Fetch character
-        const charRes = await fetch("/api/character");
-        if (charRes.ok) {
-          const charData = await charRes.json();
-          setCharacter(charData);
-        }
-
-        // Fetch tasks completed today for combo
         const today = new Date().toISOString().split("T")[0];
         const tasksRes = await fetch(`/api/tasks?status=DONE`);
         if (tasksRes.ok) {
           const tasks = await tasksRes.json();
-          const todayTasks = tasks.filter((t: { completedAt: string }) => 
+          const todayTasks = tasks.filter((t: { completedAt: string }) =>
             t.completedAt?.startsWith(today)
           );
           setTasksToday(todayTasks.length);
         }
       } catch (error) {
-        console.error("Failed to fetch data:", error);
-      } finally {
-        setIsLoading(false);
+        console.error("Failed to fetch tasks:", error);
       }
     }
-    fetchData();
+    fetchTasksToday();
   }, []);
 
   const handleSignOut = async () => {
-    await signOut();
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Sign out failed:", error);
+    }
     router.push("/login");
     router.refresh();
   };
@@ -256,8 +246,13 @@ export function AppSidebar({ character: initialCharacter }: AppSidebarProps) {
             <Shield size={14} className="text-primary" />
             <div>
               <div className="text-xs font-semibold text-foreground">
-                {character.name}
+                {loading ? "LOADING..." : character.name}
               </div>
+              {user && (
+                <div className="text-[10px] text-muted-foreground truncate max-w-[120px]">
+                  {user.name ?? user.email}
+                </div>
+              )}
               <div className="text-[10px] text-muted-foreground">
                 {character.tasksCompleted} quests cleared
               </div>
@@ -278,3 +273,4 @@ export function AppSidebar({ character: initialCharacter }: AppSidebarProps) {
     </div>
   );
 }
+
