@@ -30,7 +30,7 @@ The application has a **solid foundation** with most core game mechanics impleme
 - **Supabase auth helpers** (`getAuthenticatedUser`, `requireAuth`)
 - **Auth pages** (login, register, Google OAuth, callback)
 - **Auth middleware** (route protection, redirect to /login)
-- **All API routes** migrated to use `requireAuth`
+- **API routes** currently protected via `getAuthenticatedUser()` (migration to `requireAuth` planned)
 
 ### ⚠️ Partially Implemented
 - **Session Provider**: Auth helpers exist server-side; no client-side auth context or user menu in sidebar yet (Task 1.5)
