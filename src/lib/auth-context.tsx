@@ -71,6 +71,7 @@ export function AuthProvider({ children, initialUser = null }: AuthProviderProps
   const refreshCharacter = async () => {
     const char = await fetchCharacter();
     setCharacter(char);
+    setUser((prev) => (prev ? { ...prev, character: char } : prev));
   };
 
   const refreshUser = async () => {
