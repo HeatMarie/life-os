@@ -76,12 +76,18 @@ export function AuthProvider({ children, initialUser = null }: AuthProviderProps
 
   const refreshUser = async () => {
     const supabase = createClient();
-    const { data: { user: supabaseUser } } = await supabase.auth.getUser();
-    if (!supabaseUser) {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data?.user) {
+      if (error) {
+        console.error("Failed to refresh user:", error);
+      }
       setUser(null);
       setCharacter(null);
       return;
     }
+
+    const supabaseUser = data.user;
     const char = await fetchCharacter();
     setUser({
       id: supabaseUser.id,
