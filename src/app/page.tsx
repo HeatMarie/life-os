@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { db } from "@/lib/db";
 import Link from "next/link";
-import { getAuthenticatedUser } from "@/lib/supabase/server";
+import { getAuthenticatedUser, getSupabaseUser } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
 // Helper to get streak multiplier
@@ -89,10 +89,27 @@ function StatCard({
 
 export default async function DashboardPage() {
   // Get the authenticated user from Supabase session
-  const authUser = await getAuthenticatedUser();
+  let authUser = await getAuthenticatedUser();
 
+  // If no auth user, check if there's a Supabase session
   if (!authUser) {
-    redirect("/login");
+    const supabaseUser = await getSupabaseUser();
+
+    // If no Supabase session, truly unauthenticated - redirect to login
+    if (!supabaseUser) {
+      redirect("/login");
+    }
+
+    // Supabase user exists but no DB user - create it (edge case: race condition or missing user record)
+    authUser = await db.user.create({
+      data: {
+        supabaseId: supabaseUser.id,
+        email: supabaseUser.email!,
+        name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
+        avatarUrl: supabaseUser.user_metadata?.avatar_url || null,
+      },
+      include: { character: true },
+    });
   }
 
   // If user has no character, send them to character creation
