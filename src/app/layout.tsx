@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { AppSidebar } from "@/components/app-sidebar";
 import { AuthProvider } from "@/lib/auth-context";
+import { AuthenticatedShell } from "@/components/authenticated-shell";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import "./globals.css";
 
@@ -26,7 +26,6 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const user = await getAuthenticatedUser();
-  const isAuthenticated = !!user;
 
   // Build a serialisable AuthUser to pass as SSR seed data
   const initialUser = user
@@ -59,18 +58,9 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased cyber-grid`}
       >
         <AuthProvider initialUser={initialUser}>
-          {isAuthenticated ? (
-            <div className="flex min-h-screen">
-              <AppSidebar />
-              <main className="flex-1 overflow-auto">
-                {children}
-              </main>
-            </div>
-          ) : (
-            <main className="min-h-screen">
-              {children}
-            </main>
-          )}
+          <AuthenticatedShell>
+            {children}
+          </AuthenticatedShell>
         </AuthProvider>
       </body>
     </html>
