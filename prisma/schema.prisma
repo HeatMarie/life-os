@@ -478,6 +478,9 @@ enum CharacterClass {
   MAGE
   ROGUE
   BARD
+  DRUID
+  CLERIC
+  NECROMANCER
 }
 
 enum CharacterStatus {
