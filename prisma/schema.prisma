@@ -492,19 +492,12 @@ enum EquipmentSlot {
   TRINKET
 }
 
-enum EquipmentRarity {
-  COMMON
-  RARE
-  EPIC
-  LEGENDARY
-}
-
 model EquipmentDefinition {
   id               String          @id @default(cuid())
   name             String
   description      String?
   slot             EquipmentSlot
-  rarity           EquipmentRarity
+  rarity           Rarity
   levelRequirement Int             @default(1)
   icon             String          @default("⚔️")
   strengthBonus    Int  @default(0)
