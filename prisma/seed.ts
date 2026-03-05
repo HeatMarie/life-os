@@ -333,7 +333,7 @@ async function main() {
   }
   console.log("✅ Created class equipment sets:", classEquipment.length);
 
-  // Generic non-set equipment (5 per slot per rarity = 120 items)
+  // Generic non-set equipment (5 per slot per rarity across 5 slots = 100 items)
   const genericEquipmentData = [
     // WEAPON - Common
     { name: "Iron Sword", slot: "WEAPON", rarity: "COMMON", icon: "⚔️", strengthBonus: 1, level: 1 },
