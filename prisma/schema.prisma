@@ -33,6 +33,7 @@ model User {
   writings      WritingPiece[]
   achievements  UserAchievement[]
   inventory     InventoryItem[]
+  equipmentInventory  EquipmentInventoryItem[]
   questChains   QuestChain[]
   dailyChallenges DailyChallenge[]
   healthSyncs   HealthSync[]
@@ -42,10 +43,13 @@ model User {
 }
 
 enum CharacterClass {
-  WARRIOR  // +25% XP from Work, +20 max HP
-  MAGE     // +25% XP from Side Projects, +20 energy regen/day
-  ROGUE    // +25% XP from Home, +15% loot drop rate
-  BARD     // +25% XP from Writing, +1 streak protection/week
+  WARRIOR     // +25% XP from Work, +20 max HP
+  MAGE        // +25% XP from Side Projects, +20 energy regen/day
+  ROGUE       // +25% XP from Home, +15% loot drop rate
+  BARD        // +25% XP from Writing, +1 streak protection/week
+  DRUID       // Nature-focused class
+  CLERIC      // Support/healing class
+  NECROMANCER // Dark magic class
 }
 
 enum CharacterStatus {
@@ -93,10 +97,37 @@ model Character {
   weeklyEnergy     Int          @default(500)
   maxWeeklyEnergy  Int          @default(500)
   weekStartDate    DateTime     @default(now())
-  
+
+  // Allocatable Stats
+  statStrength         Int  @default(0)
+  statStamina          Int  @default(0)
+  statFocus            Int  @default(0)
+  statDiscipline       Int  @default(0)
+  statCharisma         Int  @default(0)
+  statPointsAvailable  Int  @default(0)
+  totalStatPointsEarned Int @default(0)
+
+  // Mana (Hardcore mode only)
+  mana        Int  @default(100)
+  maxMana     Int  @default(100)
+
+  // Dual-class (unlocked at level 20)
+  secondaryClass  CharacterClass?
+  lastRespecAt    DateTime?
+
+  // Gold
+  gold             Int  @default(0)
+  totalGoldEarned  Int  @default(0)
+
+  // Inventory capacity
+  inventoryCapacity Int @default(20)
+
+  // Equipment relations
+  equipment  EquippedItem[]
+
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
-  
+
   @@map("characters")
 }
 
@@ -446,6 +477,66 @@ model LootTable {
   drops     Json      // Array of { itemType, rarity, chance }
   
   @@map("loot_tables")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RPG: EQUIPMENT SYSTEM
+// ══════════════════════════════════════════════════════════════════════════════
+
+enum EquipmentSlot {
+  WEAPON
+  ARMOR
+  HELM
+  BOOTS
+  ACCESSORY
+  TRINKET
+}
+
+model EquipmentDefinition {
+  id               String          @id @default(cuid())
+  name             String
+  description      String?
+  slot             EquipmentSlot
+  rarity           Rarity
+  levelRequirement Int             @default(1)
+  icon             String          @default("⚔️")
+  strengthBonus    Int  @default(0)
+  staminaBonus     Int  @default(0)
+  focusBonus       Int  @default(0)
+  disciplineBonus  Int  @default(0)
+  charismaBonus    Int  @default(0)
+  specialEffect    String?
+  specialEffectId  String?
+  setName          String?
+  setClass         CharacterClass?
+  equippedBy       EquippedItem[]
+  inventoryItems   EquipmentInventoryItem[]
+  createdAt        DateTime  @default(now())
+  @@map("equipment_definitions")
+}
+
+model EquippedItem {
+  id           String              @id @default(cuid())
+  characterId  String
+  character    Character           @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  equipmentId  String
+  equipment    EquipmentDefinition @relation(fields: [equipmentId], references: [id])
+  slot         EquipmentSlot
+  upgradeLevel Int  @default(0)
+  equippedAt   DateTime  @default(now())
+  @@unique([characterId, slot])
+  @@map("equipped_items")
+}
+
+model EquipmentInventoryItem {
+  id           String              @id @default(cuid())
+  userId       String
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  equipmentId  String
+  equipment    EquipmentDefinition @relation(fields: [equipmentId], references: [id])
+  upgradeLevel Int  @default(0)
+  acquiredAt   DateTime  @default(now())
+  @@map("equipment_inventory")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
