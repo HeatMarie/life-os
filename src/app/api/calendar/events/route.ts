@@ -44,12 +44,10 @@ export async function GET(request: NextRequest) {
 
     let accessToken = calendarSync.accessToken;
 
-    // Check if token is expired and refresh if needed
-    if (
-      calendarSync.tokenExpiresAt &&
-      calendarSync.tokenExpiresAt < new Date() &&
-      calendarSync.refreshToken
-    ) {
+    // Always refresh the token if we have a refresh token — access tokens
+    // can be invalidated by Google even before the stored expiry (e.g. after
+    // the Supabase project was paused/restored).
+    if (calendarSync.refreshToken) {
       try {
         const newTokens = await refreshGoogleToken(calendarSync.refreshToken);
 
@@ -67,11 +65,29 @@ export async function GET(request: NextRequest) {
         });
       } catch (refreshError) {
         console.error("Failed to refresh token:", refreshError);
+        // Token refresh failed — mark sync as inactive so status shows disconnected
+        await db.calendarSync.update({
+          where: { id: calendarSync.id },
+          data: { isActive: false },
+        });
         return NextResponse.json(
-          { error: "Token expired. Please reconnect Google Calendar." },
+          { error: "Google token expired. Please reconnect Google Calendar." },
           { status: 401 }
         );
       }
+    } else if (
+      calendarSync.tokenExpiresAt &&
+      calendarSync.tokenExpiresAt < new Date()
+    ) {
+      // No refresh token and the access token is expired — nothing we can do
+      await db.calendarSync.update({
+        where: { id: calendarSync.id },
+        data: { isActive: false },
+      });
+      return NextResponse.json(
+        { error: "Token expired and no refresh token available. Please reconnect Google Calendar." },
+        { status: 401 }
+      );
     }
 
     // Get timezone from request (defaults to UTC)
@@ -84,10 +100,20 @@ export async function GET(request: NextRequest) {
       : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Default 7 days
 
     // Get all calendars
-    const calendars = await listCalendars(accessToken);
+    let calendars;
+    try {
+      calendars = await listCalendars(accessToken);
+    } catch (listError) {
+      console.error("Failed to list calendars:", listError);
+      return NextResponse.json(
+        { error: "Failed to list Google calendars. Your token may be invalid — try reconnecting." },
+        { status: 502 }
+      );
+    }
     
     // Fetch events from all calendars
     const allEvents: ReturnType<typeof convertGoogleEvent>[] = [];
+    const calendarErrors: string[] = [];
     
     for (const calendar of calendars) {
       if (!calendar.id) continue;
@@ -111,9 +137,22 @@ export async function GET(request: NextRequest) {
         
         allEvents.push(...formattedEvents);
       } catch (err) {
-        // Skip calendars we can't access (e.g., holiday calendars)
-        console.log(`Skipping calendar ${calendar.id}:`, err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`Skipping calendar ${calendar.id}:`, errMsg);
+        calendarErrors.push(`${calendar.summary || calendar.id}: ${errMsg}`);
       }
+    }
+
+    // If ALL calendars failed, surface the error
+    if (allEvents.length === 0 && calendarErrors.length > 0) {
+      console.error("All calendar fetches failed:", calendarErrors);
+      return NextResponse.json(
+        { 
+          error: "Failed to fetch events from any calendar. Try reconnecting Google Calendar.",
+          details: calendarErrors,
+        },
+        { status: 502 }
+      );
     }
 
     // Sort by start time
@@ -176,9 +215,9 @@ async function getValidAccessToken(calendarSync: {
 // POST /api/calendar/events - Sync Google Calendar events to local DB and create tasks
 export async function POST(request: NextRequest) {
   try {
-    const user = await db.user.findFirst();
+    const user = await getAuthenticatedUser();
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();

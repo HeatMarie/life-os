@@ -29,7 +29,6 @@ import {
   Plus,
   Clock,
   CloudOff,
-  RefreshCw,
   Loader2,
   MapPin,
   Trash2,
@@ -100,7 +99,8 @@ interface GoogleCalendar {
   primary: boolean;
 }
 
-const HOURS = Array.from({ length: 16 }, (_, i) => i + 6); // 6 AM to 10 PM
+const HOURS = Array.from({ length: 18 }, (_, i) => i + 5); // 5 AM to 11 PM
+const TIME_SLOTS = Array.from({ length: 37 }, (_, i) => ({ hour: Math.floor(i / 2) + 5, minute: (i % 2) * 30 })); // 5:00 to 11:00 PM every 30 min
 
 // Helper functions
 function getWeekDays(date: Date): Date[] {
@@ -175,6 +175,87 @@ function getUserTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
+// ─── Overlap layout utility ─────────────────────────────────────────────────
+// Assigns column index + total columns to each event so they tile side-by-side
+// instead of stacking on top of one another.
+interface LayoutSlot {
+  event: CalendarEvent;
+  col: number;
+  totalCols: number;
+}
+
+function layoutOverlappingEvents(events: CalendarEvent[]): LayoutSlot[] {
+  if (events.length === 0) return [];
+
+  // Separate all-day from timed events
+  const timed = events
+    .filter((e) => !e.allDay)
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+
+  const slots: LayoutSlot[] = [];
+
+  // Group overlapping events into clusters.
+  // Use a visual buffer (15 min) so back-to-back or nearly-adjacent events
+  // get placed side-by-side instead of rendering on top of each other.
+  const VISUAL_BUFFER_MS = 15 * 60 * 1000; // 15 minutes
+  const clusters: CalendarEvent[][] = [];
+  let currentCluster: CalendarEvent[] = [];
+  let clusterEnd = -Infinity;
+
+  for (const ev of timed) {
+    const start = new Date(ev.startsAt).getTime();
+    const end = new Date(ev.endsAt).getTime();
+
+    if (start < clusterEnd + VISUAL_BUFFER_MS) {
+      // Overlaps or nearly touches the current cluster
+      currentCluster.push(ev);
+      clusterEnd = Math.max(clusterEnd, end);
+    } else {
+      if (currentCluster.length > 0) clusters.push(currentCluster);
+      currentCluster = [ev];
+      clusterEnd = end;
+    }
+  }
+  if (currentCluster.length > 0) clusters.push(currentCluster);
+
+  // For each cluster, assign columns greedily
+  for (const cluster of clusters) {
+    const columns: number[][] = []; // columns[colIdx] = list of end-times
+
+    for (const ev of cluster) {
+      const start = new Date(ev.startsAt).getTime();
+      let placed = false;
+
+      for (let col = 0; col < columns.length; col++) {
+        const lastEnd = columns[col][columns[col].length - 1];
+        // Same buffer for column assignment — don't reuse a column if
+        // the previous event just ended
+        if (start >= lastEnd + VISUAL_BUFFER_MS) {
+          columns[col].push(new Date(ev.endsAt).getTime());
+          slots.push({ event: ev, col, totalCols: 0 });
+          placed = true;
+          break;
+        }
+      }
+
+      if (!placed) {
+        columns.push([new Date(ev.endsAt).getTime()]);
+        slots.push({ event: ev, col: columns.length - 1, totalCols: 0 });
+      }
+    }
+
+    // Set totalCols for every event in this cluster
+    const totalCols = columns.length;
+    for (const slot of slots) {
+      if (cluster.includes(slot.event) && slot.totalCols === 0) {
+        slot.totalCols = totalCols;
+      }
+    }
+  }
+
+  return slots;
+}
+
 // Create ISO string that preserves local timezone
 function toLocalISOString(date: Date): string {
   const offset = date.getTimezoneOffset();
@@ -203,6 +284,7 @@ export default function CalendarPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
   
   // Modal states
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -294,6 +376,7 @@ export default function CalendarPage() {
         const timezone = getUserTimezone();
 
         if (connected) {
+          setCalendarError(null);
           // Fetch from Google Calendar (use local ISO strings to preserve timezone)
           const gcalRes = await fetch(
             `/api/calendar/events?timeMin=${toLocalISOString(start)}&timeMax=${toLocalISOString(end)}&timeZone=${encodeURIComponent(timezone)}`
@@ -326,6 +409,17 @@ export default function CalendarPage() {
               isFromGoogle: true,
             }));
             setEvents(googleEvents);
+          } else {
+            // Surface API errors to the user
+            const errData = await gcalRes.json().catch(() => ({ error: "Unknown error" }));
+            const errMsg = errData.error || `Failed to fetch calendar events (${gcalRes.status})`;
+            setCalendarError(errMsg);
+            console.error("Calendar events fetch failed:", errMsg, errData.details);
+            
+            // If token expired (401), mark as disconnected so we show the reconnect button
+            if (gcalRes.status === 401) {
+              setIsConnected(false);
+            }
           }
         } else {
           // Fetch from local database (use local ISO strings)
@@ -552,14 +646,14 @@ export default function CalendarPage() {
     }
   };
 
-  // Get event position for day/week view
+  // Get event position for day/week view (5 AM – 11 PM = 18 hours)
   const getEventPosition = (event: CalendarEvent) => {
     const start = new Date(event.startsAt);
     const end = new Date(event.endsAt);
     const startHour = start.getHours() + start.getMinutes() / 60;
     const endHour = end.getHours() + end.getMinutes() / 60;
-    const top = ((startHour - 6) / 16) * 100;
-    const height = Math.max(((endHour - startHour) / 16) * 100, 3);
+    const top = ((startHour - 5) / 18) * 100;
+    const height = Math.max(((endHour - startHour) / 18) * 100, 2.2); // min ~24 min visible
     return { top: `${Math.max(0, top)}%`, height: `${height}%` };
   };
 
@@ -593,114 +687,285 @@ export default function CalendarPage() {
   };
 
   // Day View Component
-  const DayView = () => (
-    <div className="relative" style={{ height: "700px" }}>
-      {HOURS.map((hour) => (
-        <div
-          key={hour}
-          className="absolute left-0 right-0 border-t border-border/50 flex"
-          style={{ top: `${((hour - 6) / 16) * 100}%` }}
-        >
-          <span className="text-[10px] text-muted-foreground px-2 py-1 w-14 shrink-0">
-            {hour === 12 ? "12 PM" : hour > 12 ? `${hour - 12} PM` : `${hour} AM`}
-          </span>
-        </div>
-      ))}
-      <div className="absolute left-14 right-2 top-0 bottom-0">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+  const DayView = () => {
+    const allDayEvents = events.filter((e) => e.allDay);
+    const timedEvents = events.filter((e) => !e.allDay);
+    const slots = layoutOverlappingEvents(timedEvents);
+
+    return (
+      <div className="flex flex-col">
+        {/* All-day events banner */}
+        {allDayEvents.length > 0 && (
+          <div className="border-b border-border/50 px-2 py-2 flex flex-wrap gap-1.5 mb-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground w-14 shrink-0 pt-1 font-medium">
+              All day
+            </span>
+            <div className="flex flex-wrap gap-1.5 flex-1">
+              {allDayEvents.map((event) => {
+                const color = event.calendarColor || event.area?.color || "#666";
+                return (
+                  <div
+                    key={event.id}
+                    onClick={() => openEventDetail(event)}
+                    className="text-xs px-2.5 py-1 rounded-md cursor-pointer transition-colors hover:brightness-125 truncate max-w-60 font-medium"
+                    style={{
+                      backgroundColor: color + "22",
+                      borderLeft: `3px solid ${color}`,
+                      color: color,
+                    }}
+                  >
+                    {event.title}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        ) : events.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            No events for this day
-          </div>
-        ) : (
-          events.map((event) => {
-            const pos = getEventPosition(event);
-            const borderColor = event.calendarColor || event.area?.color || "var(--border)";
+        )}
+
+        {/* Time grid */}
+        <div className="relative" style={{ height: "1080px" }}>
+          {/* Half-hour lines */}
+          {TIME_SLOTS.map(({ hour, minute }) => {
+            const isHour = minute === 0;
+            const slotMinutes = (hour - 5) * 60 + minute;
+            const pct = (slotMinutes / (18 * 60)) * 100;
             return (
               <div
-                key={event.id}
-                onClick={() => openEventDetail(event)}
-                className="absolute left-0 right-0 rounded-lg border-l-4 p-2 cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg bg-muted/80 overflow-hidden"
-                style={{ top: pos.top, height: pos.height, borderLeftColor: borderColor }}
+                key={`${hour}-${minute}`}
+                className={`absolute left-0 right-0 border-t ${
+                  isHour ? "border-border/40" : "border-border/15"
+                }`}
+                style={{ top: `${pct}%` }}
               >
-                <div className="font-semibold text-sm truncate">{event.title}</div>
-                <div className="text-xs opacity-70 truncate">
-                  {formatTime(event.startsAt)} - {formatTime(event.endsAt)}
-                </div>
-                {event.calendarName && (
-                  <div className="text-xs text-muted-foreground truncate mt-1">
-                    {event.calendarName}
-                  </div>
-                )}
+                <span className={`px-2 py-0.5 w-14 inline-block select-none ${
+                  isHour
+                    ? "text-[10px] text-muted-foreground/70"
+                    : "text-[9px] text-muted-foreground/35"
+                }`}>
+                  {isHour
+                    ? hour === 0 ? "12 AM" : hour === 12 ? "12 PM" : hour > 12 ? `${hour - 12} PM` : `${hour} AM`
+                    : hour === 0 ? "12:30" : hour === 12 ? "12:30" : hour > 12 ? `${hour - 12}:30` : `${hour}:30`
+                  }
+                </span>
               </div>
             );
-          })
-        )}
+          })}
+
+          {/* Now indicator */}
+          {isSameDay(currentDate, new Date()) && (() => {
+            const now = new Date();
+            const nowHour = now.getHours() + now.getMinutes() / 60;
+            const pct = ((nowHour - 5) / 18) * 100;
+            if (pct < 0 || pct > 100) return null;
+            return (
+              <div className="absolute left-14 right-2 z-20 flex items-center" style={{ top: `${pct}%` }}>
+                <div className="w-2 h-2 rounded-full bg-red-500 -ml-1 shrink-0" />
+                <div className="flex-1 h-px bg-red-500/70" />
+              </div>
+            );
+          })()}
+
+          {/* Events area */}
+          <div className="absolute left-14 right-2 top-0 bottom-0">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : timedEvents.length === 0 && allDayEvents.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                No events for this day
+              </div>
+            ) : (
+              slots.map(({ event, col, totalCols }) => {
+                const pos = getEventPosition(event);
+                const color = event.calendarColor || event.area?.color || "#888";
+                const widthPct = 100 / totalCols;
+                const leftPct = col * widthPct;
+                // Small gap between side-by-side columns
+                const gapPx = totalCols > 1 ? 4 : 0;
+
+                return (
+                  <div
+                    key={event.id}
+                    onClick={() => openEventDetail(event)}
+                    className="absolute rounded-md border-l-[3px] px-2.5 py-1.5 cursor-pointer transition-all hover:brightness-110 hover:shadow-lg overflow-hidden group border border-border/30"
+                    style={{
+                      top: `calc(${pos.top} + 1px)`,
+                      height: `calc(${pos.height} - 2px)`,
+                      left: `calc(${leftPct}% + ${gapPx / 2}px)`,
+                      width: `calc(${widthPct}% - ${gapPx}px)`,
+                      borderLeftColor: color,
+                      borderLeftWidth: "3px",
+                      backgroundColor: color + "28",
+                    }}
+                  >
+                    <div className="font-semibold text-sm truncate leading-tight">{event.title}</div>
+                    <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      {formatTime(event.startsAt)} – {formatTime(event.endsAt)}
+                    </div>
+                    {event.calendarName && (
+                      <div className="text-[10px] text-muted-foreground/60 truncate mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {event.calendarName}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Week View Component
   const WeekView = () => {
     const weekDays = getWeekDays(currentDate);
     const today = new Date();
     
+    // Collect all-day events across the week
+    const allDayByDay = weekDays.map((day) =>
+      events.filter((e) => e.allDay && isSameDay(new Date(e.startsAt), day))
+    );
+    const hasAnyAllDay = allDayByDay.some((d) => d.length > 0);
+    
     return (
       <div className="flex flex-col">
         {/* Day headers */}
         <div className="flex border-b border-border">
-          <div className="w-14 shrink-0" />
+          <div className="w-12 shrink-0" />
           {weekDays.map((day, i) => (
             <div
               key={i}
-              className={`flex-1 text-center py-2 ${isSameDay(day, today) ? "bg-primary/10" : ""}`}
+              className={`flex-1 text-center py-2 border-l border-border/30 ${isSameDay(day, today) ? "bg-primary/5" : ""}`}
             >
-              <div className="text-xs text-muted-foreground">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                 {day.toLocaleDateString("en-US", { weekday: "short" })}
               </div>
-              <div className={`text-lg font-bold ${isSameDay(day, today) ? "text-primary" : ""}`}>
+              <div className={`text-base font-bold leading-tight ${isSameDay(day, today) ? "text-primary" : ""}`}>
                 {day.getDate()}
               </div>
             </div>
           ))}
         </div>
-        {/* Time grid */}
-        <div className="relative" style={{ height: "600px" }}>
-          {HOURS.map((hour) => (
-            <div
-              key={hour}
-              className="absolute left-0 right-0 border-t border-border/30"
-              style={{ top: `${((hour - 6) / 16) * 100}%` }}
-            >
-              <span className="text-[10px] text-muted-foreground px-1 w-14 inline-block">
-                {hour === 12 ? "12PM" : hour > 12 ? `${hour - 12}PM` : `${hour}AM`}
-              </span>
+
+        {/* All-day row */}
+        {hasAnyAllDay && (
+          <div className="flex border-b border-border/50">
+            <div className="w-12 shrink-0 text-[9px] text-muted-foreground/60 pt-1.5 text-right pr-1.5 uppercase">
+              All day
             </div>
-          ))}
-          <div className="absolute left-14 right-0 top-0 bottom-0 flex">
+            {weekDays.map((_, i) => (
+              <div key={i} className="flex-1 border-l border-border/30 p-0.5 min-h-7">
+                {allDayByDay[i].map((event) => {
+                  const color = event.calendarColor || event.area?.color || "#666";
+                  return (
+                    <div
+                      key={event.id}
+                      onClick={() => openEventDetail(event)}
+                      className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer truncate hover:brightness-125 font-medium mb-0.5"
+                      style={{
+                        backgroundColor: color + "22",
+                        borderLeft: `2px solid ${color}`,
+                        color,
+                      }}
+                    >
+                      {event.title}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Time grid */}
+        <div className="relative" style={{ height: "900px" }}>
+          {TIME_SLOTS.map(({ hour, minute }) => {
+            const isHour = minute === 0;
+            const slotMinutes = (hour - 5) * 60 + minute;
+            const pct = (slotMinutes / (18 * 60)) * 100;
+            return (
+              <div
+                key={`${hour}-${minute}`}
+                className={`absolute left-0 right-0 border-t ${
+                  isHour ? "border-border/20" : "border-border/10"
+                }`}
+                style={{ top: `${pct}%` }}
+              >
+                <span className={`px-1 w-12 inline-block text-right select-none ${
+                  isHour
+                    ? "text-[9px] text-muted-foreground/50"
+                    : "text-[8px] text-muted-foreground/25"
+                }`}>
+                  {isHour
+                    ? hour === 0 ? "12a" : hour === 12 ? "12p" : hour > 12 ? `${hour - 12}p` : `${hour}a`
+                    : ":30"
+                  }
+                </span>
+              </div>
+            );
+          })}
+
+          {/* Now indicator */}
+          {(() => {
+            const now = new Date();
+            const todayIdx = weekDays.findIndex((d) => isSameDay(d, now));
+            if (todayIdx === -1) return null;
+            const nowHour = now.getHours() + now.getMinutes() / 60;
+            const pct = ((nowHour - 5) / 18) * 100;
+            if (pct < 0 || pct > 100) return null;
+            const leftPct = (todayIdx / 7) * 100;
+            return (
+              <div
+                className="absolute z-20 flex items-center"
+                style={{
+                  top: `${pct}%`,
+                  left: `calc(48px + ${leftPct}%)`, // 48px = time label width (w-12)
+                  width: `${100 / 7}%`,
+                }}
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 -ml-0.5 shrink-0" />
+                <div className="flex-1 h-px bg-red-500/60" />
+              </div>
+            );
+          })()}
+
+          <div className="absolute left-12 right-0 top-0 bottom-0 flex">
             {weekDays.map((day, dayIndex) => {
-              const dayEvents = getEventsForDay(day);
+              const dayEvents = getEventsForDay(day).filter((e) => !e.allDay);
+              const slots = layoutOverlappingEvents(dayEvents);
               return (
                 <div
                   key={dayIndex}
-                  className="flex-1 relative border-l border-border/30"
+                  className={`flex-1 relative border-l border-border/20 ${
+                    isSameDay(day, today) ? "bg-primary/2" : ""
+                  }`}
                   onClick={() => openNewEventForm(day)}
                 >
-                  {dayEvents.map((event) => {
+                  {slots.map(({ event, col, totalCols }) => {
                     const pos = getEventPosition(event);
-                    const borderColor = event.calendarColor || event.area?.color || "var(--border)";
+                    const color = event.calendarColor || event.area?.color || "#888";
+                    const widthPct = 100 / totalCols;
+                    const leftPct = col * widthPct;
+                    const gapPx = totalCols > 1 ? 2 : 0;
                     return (
                       <div
                         key={event.id}
                         onClick={(e) => { e.stopPropagation(); openEventDetail(event); }}
-                        className="absolute left-0.5 right-0.5 rounded border-l-2 px-1 py-0.5 cursor-pointer hover:shadow-md bg-muted/90 overflow-hidden"
-                        style={{ top: pos.top, height: pos.height, borderLeftColor: borderColor }}
+                        className="absolute rounded border-l-2 px-1 py-0.5 cursor-pointer hover:brightness-110 hover:shadow-md overflow-hidden transition-all border border-border/20"
+                        style={{
+                          top: `calc(${pos.top} + 1px)`,
+                          height: `calc(${pos.height} - 2px)`,
+                          left: `calc(${leftPct}% + ${1 + gapPx / 2}px)`,
+                          width: `calc(${widthPct}% - ${3 + gapPx}px)`,
+                          borderLeftColor: color,
+                          borderLeftWidth: "2px",
+                          backgroundColor: color + "28",
+                        }}
                       >
-                        <div className="text-[11px] font-medium truncate">{event.title}</div>
-                        <div className="text-[9px] opacity-70 truncate">
+                        <div className="text-[10px] font-semibold truncate leading-tight">{event.title}</div>
+                        <div className="text-[9px] text-muted-foreground/70 truncate">
                           {formatTime(event.startsAt)}
                         </div>
                       </div>
@@ -726,7 +991,7 @@ export default function CalendarPage() {
         {/* Day headers */}
         <div className="grid grid-cols-7 border-b border-border">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-            <div key={day} className="text-center py-2 text-xs text-muted-foreground font-medium">
+            <div key={day} className="text-center py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
               {day}
             </div>
           ))}
@@ -741,35 +1006,44 @@ export default function CalendarPage() {
             return (
               <div
                 key={i}
-                className={`min-h-[100px] border-b border-r border-border/50 p-1 cursor-pointer hover:bg-muted/50 ${
-                  !isCurrentMonth ? "bg-muted/30 opacity-50" : ""
-                }`}
+                className={`min-h-24 border-b border-r border-border/30 p-1.5 cursor-pointer transition-colors hover:bg-muted/40 ${
+                  !isCurrentMonth ? "opacity-40" : ""
+                } ${isToday ? "bg-primary/4" : ""}`}
                 onClick={() => {
                   setCurrentDate(day);
                   setViewMode("day");
                 }}
               >
-                <div className={`text-sm font-medium mb-1 ${
-                  isToday ? "w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center" : ""
+                <div className={`text-xs font-medium mb-1 w-6 h-6 flex items-center justify-center rounded-full ${
+                  isToday ? "bg-primary text-primary-foreground" : "text-foreground/80"
                 }`}>
                   {day.getDate()}
                 </div>
                 <div className="space-y-0.5">
-                  {dayEvents.slice(0, 3).map((event) => (
-                    <div
-                      key={event.id}
-                      onClick={(e) => { e.stopPropagation(); openEventDetail(event); }}
-                      className="text-[10px] px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80"
-                      style={{ 
-                        backgroundColor: (event.calendarColor || event.area?.color || "#666") + "33",
-                        borderLeft: `2px solid ${event.calendarColor || event.area?.color || "#666"}`
-                      }}
-                    >
-                      {event.title}
-                    </div>
-                  ))}
+                  {dayEvents.slice(0, 3).map((event) => {
+                    const color = event.calendarColor || event.area?.color || "#666";
+                    return (
+                      <div
+                        key={event.id}
+                        onClick={(e) => { e.stopPropagation(); openEventDetail(event); }}
+                        className="text-[10px] leading-tight px-1.5 py-0.75 rounded cursor-pointer truncate hover:brightness-125 transition-colors font-medium"
+                        style={{ 
+                          backgroundColor: color + "20",
+                          borderLeft: `2px solid ${color}`,
+                          color: isCurrentMonth ? undefined : "inherit",
+                        }}
+                      >
+                        {!event.allDay && (
+                          <span className="text-muted-foreground/60 mr-0.5">
+                            {new Date(event.startsAt).toLocaleTimeString("en-US", { hour: "numeric", hour12: true }).replace(" ", "").toLowerCase()}
+                          </span>
+                        )}
+                        {event.title}
+                      </div>
+                    );
+                  })}
                   {dayEvents.length > 3 && (
-                    <div className="text-[10px] text-muted-foreground">
+                    <div className="text-[10px] text-muted-foreground pl-1.5 font-medium">
                       +{dayEvents.length - 3} more
                     </div>
                   )}
@@ -783,22 +1057,19 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-4 max-w-350 mx-auto">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="font-mono text-xl font-bold tracking-widest text-cyan-400 neon-glow flex items-center gap-3">
-            <CalendarIcon size={24} /> TIME MATRIX
+            <CalendarIcon size={22} /> SCHEDULE
           </h1>
-          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-            Sync your quests with spacetime
-            <span className="text-xs bg-muted px-2 py-0.5 rounded">
-              <Clock size={10} className="inline mr-1" />
-              {getUserTimezone().replace("_", " ")}
-            </span>
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+            <Clock size={10} className="inline" />
+            {getUserTimezone().replace("_", " ")}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {isConnected ? (
             <>
               <Button 
@@ -806,32 +1077,33 @@ export default function CalendarPage() {
                 size="sm" 
                 onClick={handleSyncEvents}
                 disabled={isSyncing}
-                className="text-cyan-400 border-cyan-500/50 hover:bg-cyan-500/20"
+                className="text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/10 h-8 text-xs"
               >
                 {isSyncing ? (
-                  <Loader2 size={14} className="mr-2 animate-spin" />
+                  <Loader2 size={13} className="mr-1.5 animate-spin" />
                 ) : (
-                  <Download size={14} className="mr-2" />
+                  <Download size={13} className="mr-1.5" />
                 )}
-                {isSyncing ? "Syncing..." : "Import Events"}
+                {isSyncing ? "Syncing..." : "Import"}
               </Button>
-              <Button variant="ghost" size="sm" className="text-green-400">
-                <RefreshCw size={14} className="mr-2" />
+              <div className="flex items-center gap-1.5 text-xs text-green-400/80 px-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                 Connected
-              </Button>
+              </div>
             </>
           ) : (
             <Button
               variant="neon"
               size="sm"
               onClick={() => window.location.href = "/api/auth/google"}
+              className="h-8 text-xs"
             >
-              <CloudOff size={14} className="mr-2" />
+              <CloudOff size={13} className="mr-1.5" />
               Connect Google Calendar
             </Button>
           )}
-          <Button variant="neon" size="sm" onClick={() => openNewEventForm()}>
-            <Plus size={14} className="mr-2" />
+          <Button variant="neon" size="sm" onClick={() => openNewEventForm()} className="h-8 text-xs">
+            <Plus size={13} className="mr-1.5" />
             New Event
           </Button>
         </div>
@@ -848,63 +1120,83 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {/* Calendar Error */}
+      {calendarError && (
+        <div className="p-3 rounded-lg text-sm font-mono bg-red-500/20 text-red-400 border border-red-500/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <XCircle size={16} />
+            <span>{calendarError}</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-red-400 hover:text-red-300"
+            onClick={() => window.location.href = "/api/auth/google"}
+          >
+            Reconnect
+          </Button>
+        </div>
+      )}
+
       {/* View Toggle + Navigation */}
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-                <ChevronLeft size={20} />
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(-1)}>
+                <ChevronLeft size={18} />
               </Button>
-              <Button variant="outline" size="sm" onClick={goToToday}>
+              <Button variant="outline" size="sm" className="h-7 text-xs px-3" onClick={goToToday}>
                 Today
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => navigate(1)}>
-                <ChevronRight size={20} />
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(1)}>
+                <ChevronRight size={18} />
               </Button>
             </div>
             
-            <div className="text-center font-mono text-lg font-bold">
+            <div className="text-center font-mono text-sm font-bold tracking-wide">
               {getNavigationTitle()}
             </div>
             
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-              <TabsList>
-                <TabsTrigger value="day">Day</TabsTrigger>
-                <TabsTrigger value="week">Week</TabsTrigger>
-                <TabsTrigger value="month">Month</TabsTrigger>
+              <TabsList className="h-8">
+                <TabsTrigger value="day" className="text-xs px-3 h-6">Day</TabsTrigger>
+                <TabsTrigger value="week" className="text-xs px-3 h-6">Week</TabsTrigger>
+                <TabsTrigger value="month" className="text-xs px-3 h-6">Month</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-[1fr_260px] gap-4">
         {/* Main Calendar View */}
-        <div className="col-span-3">
-          <Card>
-            <CardContent className="p-4">
-              {viewMode === "day" && <DayView />}
-              {viewMode === "week" && <WeekView />}
-              {viewMode === "month" && <MonthView />}
+        <div>
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              <div className="overflow-auto">
+                {viewMode === "day" && <DayView />}
+                {viewMode === "week" && <WeekView />}
+                {viewMode === "month" && <MonthView />}
+              </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <Card>
-            <CardHeader>
-              <CardTitle className="font-mono text-sm">TODAY&apos;S STATS</CardTitle>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Today&apos;s Stats</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 px-4 pb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Events</span>
-                <span className="font-bold">{events.length}</span>
+                <span className="font-bold tabular-nums">{events.length}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">All-day</span>
-                <span className="font-bold text-pink-400">
+                <span className="font-bold tabular-nums text-pink-400">
                   {events.filter((e) => e.allDay).length}
                 </span>
               </div>
@@ -912,51 +1204,42 @@ export default function CalendarPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="font-mono text-sm">CALENDARS</CardTitle>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Calendars</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-2 px-4 pb-4">
               {calendars.length > 0 ? (
                 calendars.map((cal) => (
                   <div key={cal.id} className="flex items-center gap-2">
                     <div
-                      className="w-3 h-3 rounded-full"
+                      className="w-2.5 h-2.5 rounded-sm shrink-0"
                       style={{ backgroundColor: cal.backgroundColor }}
                     />
                     <span className="text-sm truncate">{cal.summary}</span>
                   </div>
                 ))
               ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-cyan-400" />
-                    <span className="text-sm">Work</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full bg-green-400" />
-                    <span className="text-sm">Personal</span>
-                  </div>
-                </>
+                <p className="text-xs text-muted-foreground">No calendars connected</p>
               )}
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="font-mono text-sm">QUICK ACTIONS</CardTitle>
+            <CardHeader className="pb-2 pt-4 px-4">
+              <CardTitle className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">Quick Actions</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-1 px-4 pb-4">
               <Button
                 variant="ghost"
                 size="sm"
-                className="w-full justify-start"
+                className="w-full justify-start h-8 text-xs"
                 onClick={() => openNewEventForm()}
               >
-                <Plus size={14} className="mr-2" />
+                <Plus size={13} className="mr-2" />
                 Schedule Focus Block
               </Button>
-              <Button variant="ghost" size="sm" className="w-full justify-start">
-                <Clock size={14} className="mr-2" />
+              <Button variant="ghost" size="sm" className="w-full justify-start h-8 text-xs">
+                <Clock size={13} className="mr-2" />
                 Block Recovery Time
               </Button>
             </CardContent>

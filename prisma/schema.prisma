@@ -1,139 +1,452 @@
-// LifeOS - Gamified Productivity RPG Database Schema
-// PostgreSQL with Supabase
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-    provider  = "postgresql"
+  provider = "postgresql"
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// USER & CHARACTER SYSTEM
-// ══════════════════════════════════════════════════════════════════════════════
-
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  avatarUrl     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  // Auth
-  supabaseId    String    @unique
-  
-  // Relations
-  character     Character?
-  tasks         Task[]
-  events        Event[]
-  projects      Project[]
-  goals         Goal[]
-  writings      WritingPiece[]
-  achievements  UserAchievement[]
-  inventory     InventoryItem[]
-  equipmentInventory  EquipmentInventoryItem[]
-  questChains   QuestChain[]
-  dailyChallenges DailyChallenge[]
-  healthSyncs   HealthSync[]
-  healthLogs    HealthLog[]
-  
-  @@map("users")
+model achievements {
+  id                String              @id
+  code              String              @unique
+  name              String
+  description       String
+  icon              String
+  rarity            Rarity
+  xpReward          Int
+  condition         Json
+  user_achievements user_achievements[]
 }
 
-enum CharacterClass {
-  WARRIOR     // +25% XP from Work, +20 max HP
-  MAGE        // +25% XP from Side Projects, +20 energy regen/day
-  ROGUE       // +25% XP from Home, +15% loot drop rate
-  BARD        // +25% XP from Writing, +1 streak protection/week
-  DRUID       // Nature-focused class
-  CLERIC      // Support/healing class
-  NECROMANCER // Dark magic class
+model ai_cache_entries {
+  id        String   @id
+  skill     String
+  inputHash String
+  response  Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@index([skill, inputHash])
 }
 
-enum CharacterStatus {
-  ALIVE
-  DEAD
-  EXHAUSTED  // Burnout state - 0 energy
+model ai_conversations {
+  id        String   @id
+  userId    String
+  title     String?
+  context   String?
+  messages  Json     @default("[]")
+  provider  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
 }
 
-model Character {
-  id            String          @id @default(cuid())
-  userId        String          @unique
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  name          String
-  class         CharacterClass
-  level         Int             @default(1)
-  xp            Int             @default(0)
-  xpToNextLevel Int             @default(250)
-  
-  // Health System
-  hp            Int             @default(100)
-  maxHp         Int             @default(100)
-  
-  // Energy/Burnout System
-  energy        Int             @default(100)
-  maxEnergy     Int             @default(100)
-  energyRegenRate Int           @default(20) // Per day while sleeping
-  
-  status        CharacterStatus @default(ALIVE)
-  diedAt        DateTime?
-  deathCount    Int             @default(0)
-  
-  // Streaks & Combos
-  currentStreak Int             @default(0)
-  longestStreak Int             @default(0)
-  lastActiveAt  DateTime        @default(now())
-  streakProtection Int          @default(0) // Days of protection remaining
-  
-  // Stats
-  tasksCompleted Int            @default(0)
-  bossesDefeated Int            @default(0)
-  totalXpEarned  Int            @default(0)
-  
-  // Weekly Energy System (resets Monday)
-  weeklyEnergy     Int          @default(500)
-  maxWeeklyEnergy  Int          @default(500)
-  weekStartDate    DateTime     @default(now())
-
-  // Allocatable Stats
-  statStrength         Int  @default(0)
-  statStamina          Int  @default(0)
-  statFocus            Int  @default(0)
-  statDiscipline       Int  @default(0)
-  statCharisma         Int  @default(0)
-  statPointsAvailable  Int  @default(0)
-  totalStatPointsEarned Int @default(0)
-
-  // Mana (Hardcore mode only)
-  mana        Int  @default(100)
-  maxMana     Int  @default(100)
-
-  // Dual-class (unlocked at level 20)
-  secondaryClass  CharacterClass?
-  lastRespecAt    DateTime?
-
-  // Gold
-  gold             Int  @default(0)
-  totalGoldEarned  Int  @default(0)
-
-  // Inventory capacity
-  inventoryCapacity Int @default(20)
-
-  // Equipment relations
-  equipment  EquippedItem[]
-
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-
-  @@map("characters")
+model ai_preferences {
+  id                   String   @id
+  userId               String   @unique
+  autoGenerateStories  Boolean  @default(true)
+  smartTaskSuggestions Boolean  @default(true)
+  dailyBriefing        Boolean  @default(false)
+  burnoutWarnings      Boolean  @default(true)
+  writingAssistance    String   @default("subtle")
+  narrativeTone        String   @default("epic")
+  insightFrequency     String   @default("balanced")
+  dailyTokenLimit      Int      @default(50000)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime
+  users                users    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// AREAS, PROJECTS & TASKS
-// ══════════════════════════════════════════════════════════════════════════════
+model ai_usage {
+  id         String   @id
+  userId     String
+  skill      String
+  tokensUsed Int
+  cost       Float
+  success    Boolean  @default(true)
+  provider   String?
+  model      String?
+  date       DateTime @default(now())
+  createdAt  DateTime @default(now())
+  users      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([skill, date])
+  @@index([userId, date])
+  @@index([userId, skill, date])
+}
+
+model areas {
+  id             String           @id
+  type           AreaType         @unique
+  displayName    String
+  icon           String
+  color          String
+  sortOrder      Int
+  events         events[]
+  goals          goals[]
+  projects       projects[]
+  tasks          tasks[]
+  writing_pieces writing_pieces[]
+}
+
+model bosses {
+  id          String     @id
+  projectId   String     @unique
+  name        String
+  description String?
+  icon        String     @default("💀")
+  hp          Int
+  maxHp       Int
+  status      BossStatus @default(ACTIVE)
+  deadline    DateTime?
+  xpReward    Int        @default(500)
+  lootTableId String?
+  defeatedAt  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime
+  projects    projects   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model calendar_syncs {
+  id             String    @id
+  userId         String
+  provider       String    @default("GOOGLE")
+  email          String?
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  isActive       Boolean   @default(true)
+  lastSyncAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime
+  users          users     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, email])
+}
+
+model characters {
+  id               String          @id
+  userId           String          @unique
+  name             String
+  class            CharacterClass
+  level            Int             @default(1)
+  xp               Int             @default(0)
+  xpToNextLevel    Int             @default(250)
+  hp               Int             @default(100)
+  maxHp            Int             @default(100)
+  energy           Int             @default(100)
+  maxEnergy        Int             @default(100)
+  energyRegenRate  Int             @default(20)
+  status           CharacterStatus @default(ALIVE)
+  diedAt           DateTime?
+  deathCount       Int             @default(0)
+  currentStreak    Int             @default(0)
+  longestStreak    Int             @default(0)
+  lastActiveAt     DateTime        @default(now())
+  streakProtection Int             @default(0)
+  tasksCompleted   Int             @default(0)
+  bossesDefeated   Int             @default(0)
+  totalXpEarned    Int             @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  maxWeeklyEnergy  Int             @default(500)
+  weekStartDate    DateTime        @default(now())
+  weeklyEnergy     Int             @default(500)
+  users            users           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model daily_challenges {
+  id          String        @id
+  userId      String
+  type        ChallengeType
+  description String
+  target      Int           @default(1)
+  progress    Int           @default(0)
+  completed   Boolean       @default(false)
+  xpReward    Int           @default(75)
+  date        DateTime      @default(now()) @db.Date
+  users       users         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, date])
+}
+
+model events {
+  id               String          @id
+  userId           String
+  areaId           String
+  title            String
+  description      String?
+  location         String?
+  startsAt         DateTime
+  endsAt           DateTime
+  allDay           Boolean         @default(false)
+  googleEventId    String?         @unique
+  lastSyncedAt     DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  bossDamage       Int?
+  eventType        EventType       @default(ACTION_ITEM)
+  googleCalendarId String?
+  hpPenalty        Int?
+  projectId        String?
+  status           EventStatus     @default(SCHEDULED)
+  xpEarned         Int?
+  areas            areas           @relation(fields: [areaId], references: [id])
+  projects         projects?       @relation(fields: [projectId], references: [id])
+  users            users           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story_entries    story_entries[]
+}
+
+model goal_entries {
+  id     String   @id
+  goalId String
+  value  Int
+  date   DateTime @db.Date
+  goals  goals    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, date])
+}
+
+model goals {
+  id           String         @id
+  userId       String
+  areaId       String
+  title        String
+  cadence      String
+  target       Int
+  unit         String
+  createdAt    DateTime       @default(now())
+  goal_entries goal_entries[]
+  areas        areas          @relation(fields: [areaId], references: [id])
+  users        users          @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model health_logs {
+  id        String        @id
+  userId    String
+  type      HealthLogType
+  value     Float?
+  unit      String?
+  notes     String?
+  source    HealthSource  @default(MANUAL)
+  loggedAt  DateTime      @default(now())
+  createdAt DateTime      @default(now())
+  updatedAt DateTime
+  users     users         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model health_syncs {
+  id            String         @id
+  userId        String
+  provider      HealthProvider
+  accessToken   String?
+  refreshToken  String?
+  lastSyncAt    DateTime?
+  workoutToday  Boolean        @default(false)
+  sleepHours    Float?
+  steps         Int?
+  activeMinutes Int?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime
+  users         users          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+model inventory_items {
+  id         String   @id
+  userId     String
+  itemType   ItemType
+  quantity   Int      @default(1)
+  rarity     Rarity
+  name       String
+  icon       String
+  effect     String
+  acquiredAt DateTime @default(now())
+  users      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemType])
+}
+
+model loot_tables {
+  id    String @id
+  name  String
+  drops Json
+}
+
+model projects {
+  id             String           @id
+  userId         String
+  areaId         String
+  name           String
+  description    String?
+  status         String           @default("active")
+  targetDate     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  bosses         bosses?
+  events         events[]
+  areas          areas            @relation(fields: [areaId], references: [id])
+  users          users            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks          tasks[]
+  writing_pieces writing_pieces[]
+}
+
+model quest_chains {
+  id          String      @id
+  userId      String
+  title       String
+  narrative   String?
+  steps       Json
+  currentStep Int         @default(0)
+  totalSteps  Int
+  status      QuestStatus @default(ACTIVE)
+  xpReward    Int         @default(500)
+  createdAt   DateTime    @default(now())
+  completedAt DateTime?
+  users       users       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks       tasks[]
+}
+
+model story_entries {
+  id          String         @id
+  userId      String
+  entryType   StoryEntryType
+  title       String
+  narrative   String
+  eventId     String?
+  xpEarned    Int?
+  hpChange    Int?
+  bossDamage  Int?
+  aiGenerated Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  events      events?        @relation(fields: [eventId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model tags {
+  id        String      @id
+  name      String      @unique
+  color     String?
+  task_tags task_tags[]
+}
+
+model task_buckets {
+  id        String   @id
+  userId    String
+  name      String
+  color     String?
+  sortOrder Int      @default(0)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  tasks     tasks[]
+
+  @@unique([userId, name])
+}
+
+model task_tags {
+  taskId String
+  tagId  String
+  tags   tags   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tasks  tasks  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+}
+
+model tasks {
+  id             String        @id
+  userId         String
+  areaId         String
+  projectId      String?
+  title          String
+  description    String?
+  status         TaskStatus    @default(TODO)
+  priority       Priority      @default(MEDIUM)
+  energyCost     Int           @default(15)
+  xpReward       Int           @default(60)
+  dueDate        DateTime?
+  completedAt    DateTime?
+  damageDealt    Int           @default(0)
+  questChainId   String?
+  questStepIndex Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime
+  bucketId       String?
+  googleEventId  String?       @unique
+  startsAt       DateTime?
+  type           TaskType      @default(OTHER)
+  task_tags      task_tags[]
+  areas          areas         @relation(fields: [areaId], references: [id])
+  task_buckets   task_buckets? @relation(fields: [bucketId], references: [id])
+  projects       projects?     @relation(fields: [projectId], references: [id])
+  quest_chains   quest_chains? @relation(fields: [questChainId], references: [id])
+  users          users         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model user_achievements {
+  userId        String
+  achievementId String
+  unlockedAt    DateTime     @default(now())
+  progress      Int          @default(0)
+  achievements  achievements @relation(fields: [achievementId], references: [id])
+  users         users        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, achievementId])
+}
+
+model users {
+  id                String              @id
+  email             String              @unique
+  name              String?
+  avatarUrl         String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  supabaseId        String              @unique
+  ai_preferences    ai_preferences?
+  ai_usage          ai_usage[]
+  calendar_syncs    calendar_syncs[]
+  characters        characters?
+  daily_challenges  daily_challenges[]
+  events            events[]
+  goals             goals[]
+  health_logs       health_logs[]
+  health_syncs      health_syncs[]
+  inventory_items   inventory_items[]
+  projects          projects[]
+  quest_chains      quest_chains[]
+  tasks             tasks[]
+  user_achievements user_achievements[]
+  writing_pieces    writing_pieces[]
+}
+
+model writing_pieces {
+  id               String             @id
+  userId           String
+  areaId           String
+  projectId        String?
+  title            String
+  type             WritingType
+  status           WritingStatus      @default(IDEA)
+  wordCount        Int                @default(0)
+  targetWords      Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  areas            areas              @relation(fields: [areaId], references: [id])
+  projects         projects?          @relation(fields: [projectId], references: [id])
+  users            users              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  writing_sessions writing_sessions[]
+}
+
+model writing_sessions {
+  id             String         @id
+  writingId      String
+  wordsAdded     Int
+  duration       Int?
+  createdAt      DateTime       @default(now())
+  writing_pieces writing_pieces @relation(fields: [writingId], references: [id], onDelete: Cascade)
+}
 
 enum AreaType {
   WORK
@@ -142,594 +455,49 @@ enum AreaType {
   SIDE_PROJECTS
 }
 
-model Area {
-  id          String    @id @default(cuid())
-  type        AreaType  @unique
-  displayName String
-  icon        String
-  color       String    // Hex color
-  sortOrder   Int
-  
-  projects    Project[]
-  tasks       Task[]
-  events      Event[]
-  goals       Goal[]
-  writings    WritingPiece[]
-  
-  @@map("areas")
+enum BossStatus {
+  DORMANT
+  ACTIVE
+  DEFEATED
+  ESCAPED
 }
 
-model Project {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  areaId      String
-  area        Area      @relation(fields: [areaId], references: [id])
-  
-  name        String
-  description String?
-  status      String    @default("active") // active, completed, paused, archived
-  targetDate  DateTime?
-  
-  tasks       Task[]
-  boss        Boss?
-  writings    WritingPiece[]
-  events      Event[]
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
-  @@map("projects")
+enum ChallengeType {
+  COMPLETE_TASKS
+  HIGH_PRIORITY
+  DEFEAT_BOSS
+  WORKOUT
+  WRITING
+  MULTI_AREA
+  EARLY_BIRD
+  NIGHT_OWL
 }
 
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  WAITING
-  SOMEDAY
-  DONE
-  CANCELLED
+enum CharacterClass {
+  WARRIOR
+  MAGE
+  ROGUE
+  BARD
 }
 
-enum Priority {
-  URGENT    // 35 energy, 120 XP base
-  HIGH      // 25 energy, 90 XP base
-  MEDIUM    // 15 energy, 60 XP base
-  LOW       // 10 energy, 30 XP base
-  NONE      // 5 energy, 20 XP base
-}
-
-enum TaskType {
-  DEEP_WORK     // Focused, uninterrupted work sessions
-  MEETING       // Scheduled calls or in-person meetings
-  APPOINTMENT   // Medical, legal, or other fixed appointments
-  SOCIAL        // Hangouts, dinners, events with friends/family
-  ERRAND        // Shopping, errands, quick tasks outside
-  ROUTINE       // Recurring habits: exercise, journal, etc.
-  ADMIN         // Email, scheduling, organizing, paperwork
-  CREATIVE      // Writing, design, art, brainstorming
-  LEARNING      // Courses, reading, skill development
-  OTHER         // Catch-all for miscellaneous tasks
-}
-
-model Task {
-  id          String      @id @default(cuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  areaId      String
-  area        Area        @relation(fields: [areaId], references: [id])
-  projectId   String?
-  project     Project?    @relation(fields: [projectId], references: [id])
-  
-  // Board bucket (for Kanban view)
-  bucketId    String?
-  bucket      TaskBucket? @relation(fields: [bucketId], references: [id])
-  
-  title       String
-  description String?
-  status      TaskStatus  @default(TODO)
-  priority    Priority    @default(MEDIUM)
-  type        TaskType    @default(OTHER)
-  
-  // Energy & XP
-  energyCost  Int         @default(15)
-  xpReward    Int         @default(60)
-  
-  // Dates - start and end for scheduling
-  startsAt    DateTime?   // When task should begin
-  dueDate     DateTime?   // When task should end/be due
-  completedAt DateTime?
-  
-  // Boss damage (if linked to project with boss)
-  damageDealt Int         @default(0)
-  
-  // Calendar sync link (prevents duplicates)
-  googleEventId String?   @unique
-  
-  // Quest chain link
-  questChainId String?
-  questChain   QuestChain? @relation(fields: [questChainId], references: [id])
-  questStepIndex Int?
-  
-  // Tags
-  tags        TaskTag[]
-  
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  
-  @@map("tasks")
-}
-
-model Tag {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  color     String?
-  tasks     TaskTag[]
-  
-  @@map("tags")
-}
-
-// Board buckets for Kanban view (customizable columns)
-model TaskBucket {
-  id        String    @id @default(cuid())
-  userId    String
-  name      String    // e.g., "To Do", "In Progress", "Done"
-  color     String?   // Hex color for the column
-  sortOrder Int       @default(0)
-  isDefault Boolean   @default(false) // Default buckets can't be deleted
-  
-  tasks     Task[]
-  
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  
-  @@unique([userId, name])
-  @@map("task_buckets")
-}
-
-model TaskTag {
-  taskId    String
-  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  tagId     String
-  tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  
-  @@id([taskId, tagId])
-  @@map("task_tags")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// CALENDAR & EVENTS
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum EventType {
-  ACTION_ITEM   // Meetings, hangouts, appointments - earns XP
-  REMINDER      // Birthdays, holidays, anniversaries - no XP/penalty
+enum CharacterStatus {
+  ALIVE
+  DEAD
+  EXHAUSTED
 }
 
 enum EventStatus {
   SCHEDULED
   COMPLETED
-  CANCELED_BY_SELF   // User canceled - HP penalty
-  CANCELED_BY_OTHER  // Organizer canceled - story note, no penalty
-  MISSED             // Past event not marked complete - HP penalty
-  RESCHEDULED        // Moved by others - story note, no penalty
+  CANCELED_BY_SELF
+  CANCELED_BY_OTHER
+  MISSED
+  RESCHEDULED
 }
 
-model Event {
-  id            String       @id @default(cuid())
-  userId        String
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  areaId        String
-  area          Area         @relation(fields: [areaId], references: [id])
-  
-  title         String
-  description   String?
-  location      String?
-  
-  startsAt      DateTime
-  endsAt        DateTime
-  allDay        Boolean      @default(false)
-  
-  // Event classification & status
-  eventType     EventType    @default(ACTION_ITEM)
-  status        EventStatus  @default(SCHEDULED)
-  
-  // Project/Boss linkage for project-related events
-  projectId     String?
-  project       Project?     @relation(fields: [projectId], references: [id])
-  
-  // Game rewards/penalties applied
-  xpEarned      Int?
-  hpPenalty     Int?
-  bossDamage    Int?
-  
-  // Google Calendar sync
-  googleEventId String?      @unique
-  googleCalendarId String?   // Which calendar it belongs to
-  lastSyncedAt  DateTime?
-  
-  // Story entry reference
-  storyEntries  StoryEntry[]
-  
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  
-  @@map("events")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RPG: BOSSES
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum BossStatus {
-  DORMANT
-  ACTIVE
-  DEFEATED
-  ESCAPED  // Deadline passed without defeat
-}
-
-model Boss {
-  id          String      @id @default(cuid())
-  projectId   String      @unique
-  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  
-  name        String      // e.g., "THE WEDDING PLANNER"
-  description String?
-  icon        String      @default("💀")
-  
-  hp          Int
-  maxHp       Int
-  status      BossStatus  @default(ACTIVE)
-  deadline    DateTime?
-  
-  // Rewards
-  xpReward    Int         @default(500)
-  lootTableId String?     // Reference to loot drop chances
-  
-  defeatedAt  DateTime?
-  
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  
-  @@map("bosses")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RPG: ACHIEVEMENTS
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum Rarity {
-  COMMON
-  RARE
-  EPIC
-  LEGENDARY
-}
-
-model Achievement {
-  id          String    @id @default(cuid())
-  code        String    @unique // e.g., "FIRST_BLOOD", "WEEK_WARRIOR"
-  name        String
-  description String
-  icon        String
-  rarity      Rarity
-  xpReward    Int
-  
-  // Unlock conditions (JSON for flexibility)
-  condition   Json      // { type: "TASKS_COMPLETED", value: 100 }
-  
-  users       UserAchievement[]
-  
-  @@map("achievements")
-}
-
-model UserAchievement {
-  userId        String
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  achievementId String
-  achievement   Achievement @relation(fields: [achievementId], references: [id])
-  
-  unlockedAt    DateTime    @default(now())
-  progress      Int         @default(0) // Progress toward unlock
-  
-  @@id([userId, achievementId])
-  @@map("user_achievements")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RPG: INVENTORY & LOOT
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum ItemType {
-  XP_SHARD        // +25 XP
-  XP_CRYSTAL      // +75 XP
-  STREAK_SHIELD   // Protect streak 1 day
-  ENERGY_POTION   // Restore 25 energy
-  DOUBLE_XP_TOKEN // Next task 2x XP
-  BOSS_BANE       // 50% extra boss damage
-  HEALTH_POTION   // Restore 25 HP
-  REVIVE_TOKEN    // Instant respawn (skip 24hr cooldown)
-}
-
-model InventoryItem {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  itemType  ItemType
-  quantity  Int       @default(1)
-  rarity    Rarity
-  
-  // Item metadata
-  name      String
-  icon      String
-  effect    String
-  
-  acquiredAt DateTime @default(now())
-  
-  @@unique([userId, itemType])
-  @@map("inventory_items")
-}
-
-model LootTable {
-  id        String    @id @default(cuid())
-  name      String    // e.g., "Task Completion", "Boss Defeat"
-  
-  drops     Json      // Array of { itemType, rarity, chance }
-  
-  @@map("loot_tables")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RPG: EQUIPMENT SYSTEM
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum EquipmentSlot {
-  WEAPON
-  ARMOR
-  HELM
-  BOOTS
-  ACCESSORY
-  TRINKET
-}
-
-model EquipmentDefinition {
-  id               String          @id @default(cuid())
-  name             String
-  description      String?
-  slot             EquipmentSlot
-  rarity           Rarity
-  levelRequirement Int             @default(1)
-  icon             String          @default("⚔️")
-  strengthBonus    Int  @default(0)
-  staminaBonus     Int  @default(0)
-  focusBonus       Int  @default(0)
-  disciplineBonus  Int  @default(0)
-  charismaBonus    Int  @default(0)
-  specialEffect    String?
-  specialEffectId  String?
-  setName          String?
-  setClass         CharacterClass?
-  equippedBy       EquippedItem[]
-  inventoryItems   EquipmentInventoryItem[]
-  createdAt        DateTime  @default(now())
-  @@map("equipment_definitions")
-}
-
-model EquippedItem {
-  id           String              @id @default(cuid())
-  characterId  String
-  character    Character           @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  equipmentId  String
-  equipment    EquipmentDefinition @relation(fields: [equipmentId], references: [id])
-  slot         EquipmentSlot
-  upgradeLevel Int  @default(0)
-  equippedAt   DateTime  @default(now())
-  @@unique([characterId, slot])
-  @@map("equipped_items")
-}
-
-model EquipmentInventoryItem {
-  id           String              @id @default(cuid())
-  userId       String
-  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  equipmentId  String
-  equipment    EquipmentDefinition @relation(fields: [equipmentId], references: [id])
-  upgradeLevel Int  @default(0)
-  acquiredAt   DateTime  @default(now())
-  @@map("equipment_inventory")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RPG: QUEST CHAINS
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum QuestStatus {
-  ACTIVE
-  COMPLETED
-  ABANDONED
-}
-
-model QuestChain {
-  id          String      @id @default(cuid())
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  title       String      // e.g., "The Harmoni Launch Arc"
-  narrative   String?     // Story text
-  
-  steps       Json        // Array of step titles/descriptions
-  currentStep Int         @default(0)
-  totalSteps  Int
-  
-  status      QuestStatus @default(ACTIVE)
-  
-  // Rewards
-  xpReward    Int         @default(500)
-  
-  tasks       Task[]      // Tasks linked to this quest
-  
-  createdAt   DateTime    @default(now())
-  completedAt DateTime?
-  
-  @@map("quest_chains")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// RPG: DAILY CHALLENGES
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum ChallengeType {
-  COMPLETE_TASKS      // Complete N tasks
-  HIGH_PRIORITY       // Complete a high-priority task
-  DEFEAT_BOSS         // Deal damage to a boss
-  WORKOUT             // Complete a workout task
-  WRITING             // Write N words
-  MULTI_AREA          // Tasks in multiple areas
-  EARLY_BIRD          // Complete a task before 8am
-  NIGHT_OWL           // Complete a task after 10pm
-}
-
-model DailyChallenge {
-  id          String        @id @default(cuid())
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  type        ChallengeType
-  description String
-  
-  target      Int           @default(1)
-  progress    Int           @default(0)
-  completed   Boolean       @default(false)
-  
-  xpReward    Int           @default(75)
-  
-  date        DateTime      @default(now()) @db.Date
-  
-  @@unique([userId, type, date])
-  @@map("daily_challenges")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// GOALS & WRITING
-// ══════════════════════════════════════════════════════════════════════════════
-
-model Goal {
-  id        String      @id @default(cuid())
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  areaId    String
-  area      Area        @relation(fields: [areaId], references: [id])
-  
-  title     String
-  cadence   String      // daily, weekly, monthly
-  target    Int
-  unit      String      // tasks, words, sessions, hours
-  
-  entries   GoalEntry[]
-  
-  createdAt DateTime    @default(now())
-  
-  @@map("goals")
-}
-
-model GoalEntry {
-  id        String    @id @default(cuid())
-  goalId    String
-  goal      Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  
-  value     Int
-  date      DateTime  @db.Date
-  
-  @@unique([goalId, date])
-  @@map("goal_entries")
-}
-
-enum WritingType {
-  STORY
-  BLOG_POST
-  ARTICLE
-  POETRY
-  OTHER
-}
-
-enum WritingStatus {
-  IDEA
-  OUTLINING
-  DRAFTING
-  EDITING
-  PUBLISHED
-  ABANDONED
-}
-
-model WritingPiece {
-  id          String        @id @default(cuid())
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  areaId      String
-  area        Area          @relation(fields: [areaId], references: [id])
-  projectId   String?
-  project     Project?      @relation(fields: [projectId], references: [id])
-  
-  title       String
-  type        WritingType
-  status      WritingStatus @default(IDEA)
-  
-  wordCount   Int           @default(0)
-  targetWords Int           @default(0)
-  
-  sessions    WritingSession[]
-  
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  
-  @@map("writing_pieces")
-}
-
-model WritingSession {
-  id          String        @id @default(cuid())
-  writingId   String
-  writing     WritingPiece  @relation(fields: [writingId], references: [id], onDelete: Cascade)
-  
-  wordsAdded  Int
-  duration    Int?          // Minutes
-  
-  createdAt   DateTime      @default(now())
-  
-  @@map("writing_sessions")
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// HEALTH DEVICE INTEGRATION
-// ══════════════════════════════════════════════════════════════════════════════
-
-enum HealthProvider {
-  APPLE_HEALTH
-  GOOGLE_FIT
-  FITBIT
-}
-
-model HealthSync {
-  id            String          @id @default(cuid())
-  userId        String
-  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  provider      HealthProvider
-  accessToken   String?
-  refreshToken  String?
-  
-  lastSyncAt    DateTime?
-  
-  // Aggregated data
-  workoutToday  Boolean         @default(false)
-  sleepHours    Float?
-  steps         Int?
-  activeMinutes Int?
-  
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  
-  @@unique([userId, provider])
-  @@map("health_syncs")
+enum EventType {
+  ACTION_ITEM
+  REMINDER
 }
 
 enum HealthLogType {
@@ -744,6 +512,12 @@ enum HealthLogType {
   MOOD
 }
 
+enum HealthProvider {
+  APPLE_HEALTH
+  GOOGLE_FIT
+  FITBIT
+}
+
 enum HealthSource {
   MANUAL
   APPLE_HEALTH
@@ -752,108 +526,86 @@ enum HealthSource {
   FITBIT
 }
 
-model HealthLog {
-  id          String        @id @default(cuid())
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  type        HealthLogType
-  value       Float?        // Numeric value (steps, oz, hours, etc.)
-  unit        String?       // "steps", "oz", "hours", "minutes", "lbs", etc.
-  notes       String?       // Optional notes (e.g., workout type)
-  
-  source      HealthSource  @default(MANUAL)
-  loggedAt    DateTime      @default(now())
-  
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  
-  @@map("health_logs")
+enum ItemType {
+  XP_SHARD
+  XP_CRYSTAL
+  STREAK_SHIELD
+  ENERGY_POTION
+  DOUBLE_XP_TOKEN
+  BOSS_BANE
+  HEALTH_POTION
+  REVIVE_TOKEN
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// GOOGLE CALENDAR SYNC
-// ══════════════════════════════════════════════════════════════════════════════
-
-model CalendarSync {
-  id              String    @id @default(cuid())
-  userId          String
-  
-  provider        String    @default("GOOGLE") // GOOGLE, APPLE, etc.
-  email           String?
-  accessToken     String
-  refreshToken    String?
-  tokenExpiresAt  DateTime?
-  
-  isActive        Boolean   @default(true)
-  lastSyncAt      DateTime?
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
-  @@unique([userId, provider, email])
-  @@map("calendar_syncs")
+enum Priority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+  NONE
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// AI INTERACTION LOGS
-// ══════════════════════════════════════════════════════════════════════════════
-
-model AIConversation {
-  id        String      @id @default(cuid())
-  userId    String
-  
-  title     String?
-  context   String?     // dailyPlanning, taskBreakdown, writing, etc.
-  messages  Json        @default("[]")
-  
-  provider  String?     // huggingface, claude
-  
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
-  
-  @@map("ai_conversations")
+enum QuestStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// LIFE STORY CHRONICLE
-// ══════════════════════════════════════════════════════════════════════════════
+enum Rarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
 
 enum StoryEntryType {
-  EVENT_COMPLETED     // User completed an action item
-  EVENT_MISSED        // User missed an action item
-  EVENT_CANCELED      // User canceled their own event
-  EVENT_RESCHEDULED   // Event was rescheduled by others
-  BOSS_DAMAGE         // Dealt damage to a boss
-  BOSS_DEFEATED       // Defeated a boss
-  LEVEL_UP            // Character leveled up
-  ACHIEVEMENT         // Unlocked an achievement
-  STREAK_MILESTONE    // Hit a streak milestone
-  DAILY_SUMMARY       // End of day summary
+  EVENT_COMPLETED
+  EVENT_MISSED
+  EVENT_CANCELED
+  EVENT_RESCHEDULED
+  BOSS_DAMAGE
+  BOSS_DEFEATED
+  LEVEL_UP
+  ACHIEVEMENT
+  STREAK_MILESTONE
+  DAILY_SUMMARY
 }
 
-model StoryEntry {
-  id          String          @id @default(cuid())
-  userId      String
-  
-  entryType   StoryEntryType
-  title       String          // Short headline for the entry
-  narrative   String          // AI-generated story text
-  
-  // Optional links to related entities
-  eventId     String?
-  event       Event?          @relation(fields: [eventId], references: [id], onDelete: SetNull)
-  
-  // Metrics captured at time of entry
-  xpEarned    Int?
-  hpChange    Int?            // Negative for damage, positive for healing
-  bossDamage  Int?
-  
-  // Metadata
-  aiGenerated Boolean         @default(true)
-  
-  createdAt   DateTime        @default(now())
-  
-  @@index([userId, createdAt])
-  @@map("story_entries")
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  WAITING
+  SOMEDAY
+  DONE
+  CANCELLED
+}
+
+enum TaskType {
+  DEEP_WORK
+  MEETING
+  APPOINTMENT
+  SOCIAL
+  ERRAND
+  ROUTINE
+  ADMIN
+  CREATIVE
+  LEARNING
+  OTHER
+}
+
+enum WritingStatus {
+  IDEA
+  OUTLINING
+  DRAFTING
+  EDITING
+  PUBLISHED
+  ABANDONED
+}
+
+enum WritingType {
+  STORY
+  BLOG_POST
+  ARTICLE
+  POETRY
+  OTHER
 }
