@@ -133,6 +133,39 @@ export const CLASS_BONUSES = {
     lootBonus: 0,
     streakProtection: 1, // +1 streak protection per week
   },
+  DRUID: {
+    name: "Druid",
+    icon: "🌿",
+    description: "Guardians of health and wellness",
+    xpBonus: { area: "HEALTH", multiplier: 1.25 },
+    hpBonus: 0,
+    energyBonus: 0,
+    lootBonus: 0,
+    streakProtection: 0,
+    hpRegenBonus: 0.25, // +25% HP regen from wellness
+  },
+  CLERIC: {
+    name: "Cleric",
+    icon: "✨",
+    description: "Champions of community and connection",
+    xpBonus: { area: "HOME", multiplier: 1.25 },
+    hpBonus: 0,
+    energyBonus: 0,
+    lootBonus: 0,
+    streakProtection: 0,
+    guildHealingBonus: 0.20, // +20% healing from guild
+  },
+  NECROMANCER: {
+    name: "Necromancer",
+    icon: "💀",
+    description: "Masters of forbidden knowledge",
+    xpBonus: { area: "LEARNING", multiplier: 1.25 },
+    hpBonus: 0,
+    energyBonus: 0,
+    lootBonus: 0,
+    streakProtection: 0,
+    deathPenaltyReduction: 0.50, // 50% reduced death penalty
+  },
 } as const;
 
 // Level progression
@@ -302,5 +335,78 @@ export const EVENT_HP_REGEN = {
   BASE: 5,                 // Base HP restored
   PER_HOUR: 2,             // Additional HP per hour
   MAX: 15,                 // Maximum HP restored
+} as const;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STAT SYSTEM
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Stat points awarded per level
+export const STAT_POINTS_PER_LEVEL = (level: number): number => {
+  if (level <= 10) return 3;
+  if (level <= 20) return 4;
+  return 5;
+};
+
+// Stat effects per point invested
+export const STAT_EFFECTS = {
+  STRENGTH: {
+    bossDamage: 1.5,        // +1.5 boss damage per point
+    maxHP: 3,               // +3 max HP per point
+  },
+  STAMINA: {
+    maxEnergy: 2,           // +2 max energy per point
+    energyCostReduction: 0.01, // -1% energy cost per point
+    energyRegen: 0.5,       // +0.5 energy regen per day per point
+  },
+  FOCUS: {
+    xpBonus: 0.02,          // +2% XP on Deep Work/Learning/Reading per point
+    maxMana: 2,             // +2 max mana per point
+    lootCrit: 0.005,        // +0.5% loot crit chance per point
+  },
+  DISCIPLINE: {
+    streakXPBonus: 0.015,   // +1.5% streak XP bonus per point
+    habitXPBonus: 0.02,     // +2% habit bonus XP per point
+    manaRegen: 0.5,         // +0.5 mana regen per hour per point
+  },
+  CHARISMA: {
+    socialXPBonus: 0.02,    // +2% social XP per point
+    guildXPContribution: 0.01, // +1% guild XP contribution per point
+  },
+} as const;
+
+// Vitality thresholds and effects
+export const VITALITY_THRESHOLDS = {
+  LEGENDARY_BOSS_REQUIREMENT: 50, // Minimum vitality to fight legendary bosses
+  HP_REGEN_PER_POINT: 0.5,        // +0.5 HP regen per hour per vitality point
+} as const;
+
+// Difficulty multipliers
+export const DIFFICULTY_MULTIPLIERS = {
+  CASUAL: 1.0,
+  BALANCED: 1.25,
+  HARDCORE: 1.5,
+} as const;
+
+// Gold rewards by priority
+export const GOLD_REWARDS = {
+  URGENT: 25,
+  HIGH: 20,
+  MEDIUM: 15,
+  LOW: 10,
+  NONE: 5,
+} as const;
+
+// Respec cost calculation
+export const RESPEC_COST = (level: number): number => {
+  return 500 * level;
+};
+
+// Inventory expansion configuration
+export const INVENTORY_EXPANSION = {
+  SLOTS_PER_PURCHASE: 5,
+  BASE_COST: 500,
+  COST_SCALING: 1.5,
+  MAX_SLOTS: 50,
 } as const;
 

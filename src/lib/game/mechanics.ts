@@ -14,10 +14,11 @@ import {
   HP_REGEN_PER_TASK,
   CHARACTER_THRESHOLDS,
   ENERGY_REGEN,
+  GOLD_REWARDS,
 } from "./constants";
 
 // Local type definitions (matches Prisma schema)
-export type CharacterClass = "WARRIOR" | "MAGE" | "ROGUE" | "BARD";
+export type CharacterClass = "WARRIOR" | "MAGE" | "ROGUE" | "BARD" | "DRUID" | "CLERIC" | "NECROMANCER";
 export type Priority = "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
 export type AreaType = "WORK" | "PERSONAL" | "HEALTH" | "LEARNING" | "CREATIVE" | "SOCIAL" | "FINANCE" | "HOME";
 export type Rarity = "COMMON" | "RARE" | "EPIC" | "LEGENDARY";
@@ -442,11 +443,23 @@ export function updateStreak(lastTaskCompletedAt: Date | null, now: Date, curren
 export function getClassBonus(characterClass: CharacterClass, priority: Priority): number {
   const classData = CLASS_BONUSES[characterClass];
   if (!classData) return 1;
-  
+
   // Warriors get bonus on URGENT/HIGH tasks
   if (characterClass === "WARRIOR" && (priority === "URGENT" || priority === "HIGH")) {
     return 1.1;
   }
-  
+
   return 1;
 }
+
+// ── Gold Rewards ─────────────────────────────────────────────────────────────
+
+/**
+ * Calculate gold reward based on task priority
+ * @param priority - Task priority level
+ * @returns Gold amount awarded
+ */
+export function calculateGoldReward(priority: Priority): number {
+  return GOLD_REWARDS[priority] || GOLD_REWARDS.MEDIUM;
+}
+
