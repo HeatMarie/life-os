@@ -148,7 +148,7 @@ export const CLASS_BONUSES = {
     name: "Cleric",
     icon: "✨",
     description: "Champions of community and connection",
-    xpBonus: { area: "SOCIAL", multiplier: 1.25 },
+    xpBonus: { area: "HOME", multiplier: 1.25 },
     hpBonus: 0,
     energyBonus: 0,
     lootBonus: 0,
