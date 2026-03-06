@@ -225,7 +225,7 @@ export async function POST(
     // Handle boss damage (through project)
     let bossDamage = 0;
     let bossDefeated = false;
-    let bossRewards = null;
+    let bossRewards: any = null;
     const boss = task.project?.boss;
 
     if (boss && boss.status === "ACTIVE") {

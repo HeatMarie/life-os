@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     // Calculate total equipment stats
     const equipmentStats = calculateTotalEquipmentStats(
-      equippedItems.map(item => ({
+      equippedItems.map((item: any) => ({
         id: item.id,
         setName: item.equipment.setName,
         stats: {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     // Calculate set bonuses
     const setBonuses = calculateEquipmentSetBonuses(
-      equippedItems.map(item => ({
+      equippedItems.map((item: any) => ({
         id: item.id,
         setName: item.equipment.setName,
       }))
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
     const maxCapacity = character.inventoryCapacity;
 
     return NextResponse.json({
-      equippedItems: equippedItems.map(item => ({
+      equippedItems: equippedItems.map((item: any) => ({
         id: item.id,
         slot: item.slot,
         upgradeLevel: item.upgradeLevel,
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
           specialEffectId: item.equipment.specialEffectId,
         },
       })),
-      inventoryItems: inventoryItems.map(item => ({
+      inventoryItems: inventoryItems.map((item: any) => ({
         id: item.id,
         upgradeLevel: item.upgradeLevel,
         acquiredAt: item.acquiredAt,
