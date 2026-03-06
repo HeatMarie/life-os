@@ -278,7 +278,13 @@ export function calculateEquipmentSetBonuses(
       bonus.bonuses.sixSet = { bossDamage: 10, xpBonus: 0.10 };
     }
 
-    activeBonuses.push(bonus);
+    if (
+      bonus.bonuses.twoSet ||
+      bonus.bonuses.fourSet ||
+      bonus.bonuses.sixSet
+    ) {
+      activeBonuses.push(bonus);
+    }
   });
 
   return activeBonuses;
