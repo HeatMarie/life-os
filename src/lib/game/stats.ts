@@ -81,7 +81,7 @@ export function calculateEffectiveMaxMana(
  * Calculate energy cost with stamina reduction
  * @param baseCost - Base energy cost of task
  * @param stamina - Stamina stat value
- * @returns Reduced energy cost (minimum 50% reduction, minimum 1 cost)
+ * @returns Reduced energy cost (up to 50% reduction, minimum 1 cost)
  */
 export function calculateEnergyCostWithStats(
   baseCost: number,
