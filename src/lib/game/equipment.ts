@@ -201,8 +201,13 @@ export function generateEquipmentDrop(
   };
 
   // Assign primary and secondary bonuses
-  drop[primaryStat] = primary;
-  drop[secondaryStat] = secondary;
+  if (primaryStat === secondaryStat) {
+    // When both stats resolve to the same key, combine the bonuses instead of overwriting
+    drop[primaryStat] = (primary ?? 0) + (secondary ?? 0);
+  } else {
+    drop[primaryStat] = primary;
+    drop[secondaryStat] = secondary;
+  }
 
   return drop;
 }
