@@ -74,39 +74,42 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // If slot is occupied, move old item to inventory
-    if (existingEquipped) {
-      await db.equipmentInventoryItem.create({
+    // If slot is occupied, move old item to inventory, then equip new item and remove it from inventory atomically
+    const equipped = await db.$transaction(async (tx) => {
+      if (existingEquipped) {
+        await tx.equipmentInventoryItem.create({
+          data: {
+            characterId: character.id,
+            equipmentId: existingEquipped.equipmentId,
+            upgradeLevel: existingEquipped.upgradeLevel,
+          },
+        });
+
+        await tx.equippedItem.delete({
+          where: { id: existingEquipped.id },
+        });
+      }
+
+      // Equip the new item
+      const newEquipped = await tx.equippedItem.create({
         data: {
           characterId: character.id,
-          equipmentId: existingEquipped.equipmentId,
-          upgradeLevel: existingEquipped.upgradeLevel,
+          equipmentId: inventoryItem.equipmentId,
+          slot: slot as never,
+          upgradeLevel: inventoryItem.upgradeLevel,
+        },
+        include: {
+          equipment: true,
         },
       });
 
-      await db.equippedItem.delete({
-        where: { id: existingEquipped.id },
+      // Remove from inventory
+      await tx.equipmentInventoryItem.delete({
+        where: { id: inventoryItemId },
       });
-    }
 
-    // Equip the new item
-    const equipped = await db.equippedItem.create({
-      data: {
-        characterId: character.id,
-        equipmentId: inventoryItem.equipmentId,
-        slot: slot as never,
-        upgradeLevel: inventoryItem.upgradeLevel,
-      },
-      include: {
-        equipment: true,
-      },
+      return newEquipped;
     });
-
-    // Remove from inventory
-    await db.equipmentInventoryItem.delete({
-      where: { id: inventoryItemId },
-    });
-
     // TODO: Recalculate character stats based on new equipment
     // This would involve summing all equipment bonuses and updating character stats
 
