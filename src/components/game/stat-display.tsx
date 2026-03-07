@@ -172,7 +172,10 @@ export function StatDisplay({
   showVitality = true,
   compact = false,
 }: StatDisplayProps) {
-  const vitality = calculateVitality(stats.strength, stats.stamina, stats.focus);
+  const totalStrength = stats.strength + (equipmentBonuses.strength ?? 0);
+  const totalStamina = stats.stamina + (equipmentBonuses.stamina ?? 0);
+  const totalFocus = stats.focus + (equipmentBonuses.focus ?? 0);
+  const vitality = calculateVitality(totalStrength, totalStamina, totalFocus);
 
   const statList: Array<{
     key: string;
