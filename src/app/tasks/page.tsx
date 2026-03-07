@@ -413,6 +413,10 @@ export default function TasksPage() {
         // Close modal if all points are allocated
         if (data.character.statPointsAvailable === 0) {
           setIsLevelUpModalOpen(false);
+          // Ensure app-wide character state (sidebar/status bars) is refreshed
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
         }
       } else {
         const error = await res.json();
