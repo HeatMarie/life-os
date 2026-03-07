@@ -38,17 +38,25 @@ export async function GET(request: NextRequest) {
 
     // Calculate total equipment stats
     const equipmentStats = calculateTotalEquipmentStats(
-      equippedItems.map((item: any) => ({
-        id: item.id,
-        setName: item.equipment.setName,
-        stats: {
-          strength: item.equipment.strengthBonus,
-          stamina: item.equipment.staminaBonus,
-          focus: item.equipment.focusBonus,
-          discipline: item.equipment.disciplineBonus,
-          charisma: item.equipment.charismaBonus,
-        },
-      }))
+      equippedItems.map((item: any) => {
+        const upgradeLevel = item.upgradeLevel ?? 0;
+        const multiplier = Math.pow(1.3, upgradeLevel);
+
+        const applyUpgrade = (baseStat: number | null | undefined) =>
+          baseStat == null ? baseStat : baseStat * multiplier;
+
+        return {
+          id: item.id,
+          setName: item.equipment.setName,
+          stats: {
+            strength: applyUpgrade(item.equipment.strengthBonus),
+            stamina: applyUpgrade(item.equipment.staminaBonus),
+            focus: applyUpgrade(item.equipment.focusBonus),
+            discipline: applyUpgrade(item.equipment.disciplineBonus),
+            charisma: applyUpgrade(item.equipment.charismaBonus),
+          },
+        };
+      })
     );
 
     // Calculate set bonuses
