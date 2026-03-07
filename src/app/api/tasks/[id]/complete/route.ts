@@ -9,6 +9,11 @@ import {
 } from "@/lib/game/mechanics";
 import { checkAchievementUnlocks } from "@/lib/game/achievements";
 import { XP_PER_LEVEL_BASE } from "@/lib/game/constants";
+import {
+  shouldDropEquipment,
+  generateEquipmentDrop,
+  calculateGoldReward,
+} from "@/lib/game/equipment";
 
 // POST /api/tasks/[id]/complete - Complete a task
 export async function POST(
@@ -172,10 +177,70 @@ export async function POST(
       }
     }
 
+    // Generate equipment drop (small chance based on priority)
+    let equipmentDrop = null;
+    if (shouldDropEquipment(task.priority)) {
+      const drop = generateEquipmentDrop(
+        character.level,
+        "TASK",
+        character.class as never,
+        character.focus || 0
+      );
+
+      // Check inventory capacity
+      const inventoryCount = await db.equipmentInventoryItem.count({
+        where: { characterId: character.id },
+      });
+
+      if (inventoryCount < character.inventoryCapacity) {
+        // Find or create equipment definition matching the drop
+        // For now, we'll need to find a matching equipment from the database
+        // In a real scenario, this would be more sophisticated
+        const equipmentWhere = {
+          slot: drop.slot as never,
+          rarity: drop.rarity as never,
+          levelRequirement: { lte: character.level },
+          // Prefer equipment definitions aligned with the character's class
+          setClass: character.class as never,
+        };
+
+        const matchingCount = await db.equipmentDefinition.count({
+          where: equipmentWhere,
+        });
+
+        let matchingEquipment = null;
+
+        if (matchingCount > 0) {
+          // Randomize selection among all matching equipment definitions
+          const randomSkip = Math.floor(Math.random() * matchingCount);
+
+          matchingEquipment = await db.equipmentDefinition.findFirst({
+            where: equipmentWhere,
+            skip: randomSkip,
+          });
+        }
+        if (matchingEquipment) {
+          equipmentDrop = await db.equipmentInventoryItem.create({
+            data: {
+              characterId: character.id,
+              equipmentId: matchingEquipment.id,
+              upgradeLevel: 0,
+            },
+            include: {
+              equipment: true,
+            },
+          });
+        }
+      }
+    }
+
+    // Award gold based on task priority
+    const goldReward = calculateGoldReward(task.priority);
+
     // Handle boss damage (through project)
     let bossDamage = 0;
     let bossDefeated = false;
-    let bossRewards = null;
+    let bossRewards: any = null;
     const boss = task.project?.boss;
 
     if (boss && boss.status === "ACTIVE") {
@@ -188,6 +253,48 @@ export async function POST(
         bossRewards = {
           xp: boss.xpReward,
         };
+
+        // Generate guaranteed equipment drop from boss defeat
+        const bossDrop = generateEquipmentDrop(
+          character.level,
+          "BOSS_DEFEAT",
+          character.class as never,
+          character.focus || 0
+        );
+
+        // Check inventory capacity for boss equipment
+        const inventoryCount = await db.equipmentInventoryItem.count({
+          where: { characterId: character.id },
+        });
+
+        let bossEquipmentDrop = null;
+        if (inventoryCount < character.inventoryCapacity) {
+          const matchingEquipment = await db.equipmentDefinition.findFirst({
+            where: {
+              slot: bossDrop.slot as never,
+              rarity: bossDrop.rarity as never,
+              levelRequirement: { lte: character.level },
+            },
+          });
+
+          if (matchingEquipment) {
+            bossEquipmentDrop = await db.equipmentInventoryItem.create({
+              data: {
+                characterId: character.id,
+                equipmentId: matchingEquipment.id,
+                upgradeLevel: 0,
+              },
+              include: {
+                equipment: true,
+              },
+            });
+          }
+        }
+
+        // Add boss equipment drop to rewards
+        if (bossEquipmentDrop) {
+          bossRewards.equipmentDrop = bossEquipmentDrop;
+        }
 
         await db.boss.update({
           where: { id: boss.id },
@@ -219,6 +326,7 @@ export async function POST(
         tasksCompleted: character.tasksCompleted + 1,
         totalXpEarned: character.totalXpEarned + totalXP + (bossRewards?.xp || 0),
         bossesDefeated: character.bossesDefeated + (bossDefeated ? 1 : 0),
+        gold: character.gold + goldReward,
         lastActiveAt: now,
       },
     });
@@ -309,10 +417,12 @@ export async function POST(
         streakMultiplier,
         classBonus,
         energySpent: task.energyCost,
+        gold: goldReward,
         newStreak,
         leveledUp,
         newLevel: leveledUp ? newLevel : null,
         loot: inventoryItem,
+        equipmentDrop,
         bossDamage,
         bossDefeated,
         bossRewards,

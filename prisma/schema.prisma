@@ -125,34 +125,50 @@ model calendar_syncs {
 }
 
 model characters {
-  id               String          @id
-  userId           String          @unique
-  name             String
-  class            CharacterClass
-  level            Int             @default(1)
-  xp               Int             @default(0)
-  xpToNextLevel    Int             @default(250)
-  hp               Int             @default(100)
-  maxHp            Int             @default(100)
-  energy           Int             @default(100)
-  maxEnergy        Int             @default(100)
-  energyRegenRate  Int             @default(20)
-  status           CharacterStatus @default(ALIVE)
-  diedAt           DateTime?
-  deathCount       Int             @default(0)
-  currentStreak    Int             @default(0)
-  longestStreak    Int             @default(0)
-  lastActiveAt     DateTime        @default(now())
-  streakProtection Int             @default(0)
-  tasksCompleted   Int             @default(0)
-  bossesDefeated   Int             @default(0)
-  totalXpEarned    Int             @default(0)
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime
-  maxWeeklyEnergy  Int             @default(500)
-  weekStartDate    DateTime        @default(now())
-  weeklyEnergy     Int             @default(500)
-  users            users           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String                @id
+  userId                String                @unique
+  name                  String
+  class                 CharacterClass
+  level                 Int                   @default(1)
+  xp                    Int                   @default(0)
+  xpToNextLevel         Int                   @default(250)
+  hp                    Int                   @default(100)
+  maxHp                 Int                   @default(100)
+  energy                Int                   @default(100)
+  maxEnergy             Int                   @default(100)
+  energyRegenRate       Int                   @default(20)
+  status                CharacterStatus       @default(ALIVE)
+  diedAt                DateTime?
+  deathCount            Int                   @default(0)
+  currentStreak         Int                   @default(0)
+  longestStreak         Int                   @default(0)
+  lastActiveAt          DateTime              @default(now())
+  streakProtection      Int                   @default(0)
+  tasksCompleted        Int                   @default(0)
+  bossesDefeated        Int                   @default(0)
+  totalXpEarned         Int                   @default(0)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime
+  maxWeeklyEnergy       Int                   @default(500)
+  weekStartDate         DateTime              @default(now())
+  weeklyEnergy          Int                   @default(500)
+  // Stats
+  strength              Int                   @default(0)
+  stamina               Int                   @default(0)
+  focus                 Int                   @default(0)
+  discipline            Int                   @default(0)
+  charisma              Int                   @default(0)
+  statPointsAvailable   Int                   @default(0)
+  totalStatPointsEarned Int                   @default(0)
+  // Resources
+  mana                  Int                   @default(0)
+  maxMana               Int                   @default(100)
+  gold                  Int                   @default(0)
+  // Inventory
+  inventoryCapacity     Int                   @default(20)
+  users                 users                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  equippedItems         equipped_items[]
+  equipmentInventory    equipment_inventory[]
 }
 
 model daily_challenges {
@@ -266,6 +282,51 @@ model inventory_items {
   users      users    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, itemType])
+}
+
+model equipment_definitions {
+  id               String                @id
+  name             String
+  description      String
+  slot             EquipmentSlot
+  rarity           Rarity
+  levelRequirement Int                   @default(1)
+  icon             String
+  strengthBonus    Int                   @default(0)
+  staminaBonus     Int                   @default(0)
+  focusBonus       Int                   @default(0)
+  disciplineBonus  Int                   @default(0)
+  charismaBonus    Int                   @default(0)
+  setName          String?
+  setClass         CharacterClass?
+  specialEffect    String?
+  specialEffectId  String?
+  createdAt        DateTime              @default(now())
+  equippedItems    equipped_items[]
+  inventoryItems   equipment_inventory[]
+}
+
+model equipped_items {
+  id           String                @id
+  characterId  String
+  equipmentId  String
+  slot         EquipmentSlot
+  upgradeLevel Int                   @default(0)
+  equippedAt   DateTime              @default(now())
+  characters   characters            @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  equipment    equipment_definitions @relation(fields: [equipmentId], references: [id])
+
+  @@unique([characterId, slot])
+}
+
+model equipment_inventory {
+  id           String                @id
+  characterId  String
+  equipmentId  String
+  upgradeLevel Int                   @default(0)
+  acquiredAt   DateTime              @default(now())
+  characters   characters            @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  equipment    equipment_definitions @relation(fields: [equipmentId], references: [id])
 }
 
 model loot_tables {
@@ -489,6 +550,21 @@ enum CharacterStatus {
   EXHAUSTED
 }
 
+enum EquipmentSlot {
+  WEAPON
+  ARMOR
+  HELM
+  BOOTS
+  ACCESSORY
+  TRINKET
+}
+
+enum UpgradeMaterial {
+  UPGRADE_STONE
+  ENHANCEMENT_CRYSTAL
+  MYTHIC_ESSENCE
+}
+
 enum EventStatus {
   SCHEDULED
   COMPLETED
@@ -538,6 +614,9 @@ enum ItemType {
   BOSS_BANE
   HEALTH_POTION
   REVIVE_TOKEN
+  UPGRADE_STONE
+  ENHANCEMENT_CRYSTAL
+  MYTHIC_ESSENCE
 }
 
 enum Priority {
