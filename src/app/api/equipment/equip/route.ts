@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
-import { calculateUpgradedStats } from "@/lib/game/equipment";
 
 // POST /api/equipment/equip - Equip an item from inventory
 export async function POST(request: NextRequest) {
