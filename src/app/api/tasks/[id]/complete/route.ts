@@ -196,14 +196,29 @@ export async function POST(
         // Find or create equipment definition matching the drop
         // For now, we'll need to find a matching equipment from the database
         // In a real scenario, this would be more sophisticated
-        const matchingEquipment = await db.equipmentDefinition.findFirst({
-          where: {
-            slot: drop.slot as never,
-            rarity: drop.rarity as never,
-            levelRequirement: { lte: character.level },
-          },
+        const equipmentWhere = {
+          slot: drop.slot as never,
+          rarity: drop.rarity as never,
+          levelRequirement: { lte: character.level },
+          // Prefer equipment definitions aligned with the character's class
+          setClass: character.class as never,
+        };
+
+        const matchingCount = await db.equipmentDefinition.count({
+          where: equipmentWhere,
         });
 
+        let matchingEquipment = null;
+
+        if (matchingCount > 0) {
+          // Randomize selection among all matching equipment definitions
+          const randomSkip = Math.floor(Math.random() * matchingCount);
+
+          matchingEquipment = await db.equipmentDefinition.findFirst({
+            where: equipmentWhere,
+            skip: randomSkip,
+          });
+        }
         if (matchingEquipment) {
           equipmentDrop = await db.equipmentInventoryItem.create({
             data: {
