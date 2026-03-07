@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { LevelUpModal } from "@/components/game/level-up-modal";
 
 // Task type from API
 interface Task {
@@ -170,6 +171,20 @@ export default function TasksPage() {
     bossName: "",
   });
   const [isSavingProject, setIsSavingProject] = useState(false);
+
+  // Level-up modal state
+  const [isLevelUpModalOpen, setIsLevelUpModalOpen] = useState(false);
+  const [levelUpData, setLevelUpData] = useState<{
+    level: number;
+    statPointsAvailable: number;
+    currentStats: {
+      strength: number;
+      stamina: number;
+      focus: number;
+      discipline: number;
+      charisma: number;
+    };
+  } | null>(null);
 
   // Fetch tasks, areas, buckets, and projects
   const fetchData = useCallback(async () => {
@@ -340,10 +355,73 @@ export default function TasksPage() {
         method: "POST",
       });
       if (res.ok) {
+        const data = await res.json();
         setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+        // Check if the player leveled up
+        if (data.rewards?.leveledUp && data.character) {
+          setLevelUpData({
+            level: data.character.level,
+            statPointsAvailable: data.character.statPointsAvailable,
+            currentStats: {
+              strength: data.character.strength,
+              stamina: data.character.stamina,
+              focus: data.character.focus,
+              discipline: data.character.discipline,
+              charisma: data.character.charisma,
+            },
+          });
+          setIsLevelUpModalOpen(true);
+        }
       }
     } catch (error) {
       console.error("Failed to complete task:", error);
+    }
+  };
+
+  // Handle stat allocation from level-up modal
+  const handleStatAllocation = async (allocations: {
+    strength: number;
+    stamina: number;
+    focus: number;
+    discipline: number;
+    charisma: number;
+  }) => {
+    try {
+      const res = await fetch("/api/character/stats", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(allocations),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        // Update levelUpData with new character stats
+        if (data.character) {
+          setLevelUpData({
+            level: data.character.level,
+            statPointsAvailable: data.character.statPointsAvailable,
+            currentStats: {
+              strength: data.character.strength,
+              stamina: data.character.stamina,
+              focus: data.character.focus,
+              discipline: data.character.discipline,
+              charisma: data.character.charisma,
+            },
+          });
+        }
+        // Close modal if all points are allocated
+        if (data.character.statPointsAvailable === 0) {
+          setIsLevelUpModalOpen(false);
+        }
+      } else {
+        const error = await res.json();
+        console.error("Failed to allocate stats:", error);
+        throw new Error(error.error || "Failed to allocate stats");
+      }
+    } catch (error) {
+      console.error("Error allocating stats:", error);
+      throw error;
     }
   };
 
@@ -1141,6 +1219,18 @@ export default function TasksPage() {
           </DialogBody>
         </DialogContent>
       </Dialog>
+
+      {/* Level Up Modal */}
+      {levelUpData && (
+        <LevelUpModal
+          open={isLevelUpModalOpen}
+          onOpenChange={setIsLevelUpModalOpen}
+          level={levelUpData.level}
+          statPointsAvailable={levelUpData.statPointsAvailable}
+          currentStats={levelUpData.currentStats}
+          onAllocate={handleStatAllocation}
+        />
+      )}
     </div>
   );
 }
