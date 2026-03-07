@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Get inventory items with full equipment definitions
-    const inventoryItems = await db.equipmentInventoryItem.findMany({
+    const inventoryItems = await db.equipmentInventory.findMany({
       where: { characterId: character.id },
       include: {
         equipment: true,
