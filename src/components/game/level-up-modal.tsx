@@ -278,7 +278,20 @@ export function LevelUpModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl bg-gradient-to-b from-card to-background border-2 border-cyan-500/50 shadow-[0_0_30px_rgba(6,182,212,0.3)]">
+      <DialogContent
+        showCloseButton={remainingPoints <= 0}
+        onInteractOutside={(event) => {
+          if (remainingPoints > 0) {
+            event.preventDefault();
+          }
+        }}
+        onEscapeKeyDown={(event) => {
+          if (remainingPoints > 0) {
+            event.preventDefault();
+          }
+        }}
+        className="sm:max-w-2xl bg-gradient-to-b from-card to-background border-2 border-cyan-500/50 shadow-[0_0_30px_rgba(6,182,212,0.3)]"
+      >
         <DialogHeader>
           <DialogTitle className="text-center">
             <div className="space-y-2">
