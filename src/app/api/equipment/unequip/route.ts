@@ -62,21 +62,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Move to inventory
-    const inventoryItem = await db.equipmentInventoryItem.create({
-      data: {
-        characterId: character.id,
-        equipmentId: equippedItem.equipmentId,
-        upgradeLevel: equippedItem.upgradeLevel,
-      },
-      include: {
-        equipment: true,
-      },
-    });
+    // Move to inventory and remove from equipped in a single transaction
+    const inventoryItem = await db.$transaction(async (tx) => {
+      const createdInventoryItem = await tx.equipmentInventoryItem.create({
+        data: {
+          characterId: character.id,
+          equipmentId: equippedItem.equipmentId,
+          upgradeLevel: equippedItem.upgradeLevel,
+        },
+        include: {
+          equipment: true,
+        },
+      });
 
-    // Remove from equipped
-    await db.equippedItem.delete({
-      where: { id: equippedItem.id },
+      await tx.equippedItem.delete({
+        where: { id: equippedItem.id },
+      });
+
+      return createdInventoryItem;
     });
 
     // TODO: Recalculate character stats after removing equipment
