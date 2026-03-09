@@ -58,7 +58,7 @@ export default function EquipmentPage() {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryCount, setInventoryCount] = useState(0);
   const [inventoryCapacity, setInventoryCapacity] = useState(20);
-  const [setBonuses, setBonuses] = useState<any>(null);
+  const [setBonusesData, setSetBonusesData] = useState<any>(null);
   const [characterLevel, setCharacterLevel] = useState(1);
   const [characterGold, setCharacterGold] = useState(0);
 
@@ -89,7 +89,7 @@ export default function EquipmentPage() {
       setInventoryItems(data.inventoryItems || []);
       setInventoryCount(data.inventoryCount || 0);
       setInventoryCapacity(data.inventoryCapacity || 20);
-      setBonuses(data.setBonuses || null);
+      setSetBonusesData(data.setBonuses || null);
     } catch (error) {
       console.error("Error fetching equipment:", error);
     }
@@ -421,7 +421,7 @@ export default function EquipmentPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <SetBonusDisplay setBonuses={setBonuses} />
+              <SetBonusDisplay setBonuses={setBonusesData} />
             </CardContent>
           </Card>
         </TabsContent>
