@@ -8,7 +8,7 @@ import {
   getClassBonus,
 } from "@/lib/game/mechanics";
 import { checkAchievementUnlocks } from "@/lib/game/achievements";
-import { XP_PER_LEVEL_BASE } from "@/lib/game/constants";
+import { XP_PER_LEVEL_BASE, STAT_POINTS_PER_LEVEL } from "@/lib/game/constants";
 import {
   shouldDropEquipment,
   generateEquipmentDrop,
@@ -124,10 +124,15 @@ export async function POST(
     // Calculate bonus stats on level up
     let maxHpBonus = 0;
     let maxEnergyBonus = 0;
+    let statPointsEarned = 0;
     if (leveledUp) {
       // +5 HP and +3 energy per level
       maxHpBonus = levelUps.length * 5;
       maxEnergyBonus = levelUps.length * 3;
+      // Award stat points based on each level gained
+      for (const level of levelUps) {
+        statPointsEarned += STAT_POINTS_PER_LEVEL(level);
+      }
     }
 
     // Generate loot drop (chance based on task priority)
@@ -328,6 +333,8 @@ export async function POST(
         bossesDefeated: character.bossesDefeated + (bossDefeated ? 1 : 0),
         gold: character.gold + goldReward,
         lastActiveAt: now,
+        statPointsAvailable: character.statPointsAvailable + statPointsEarned,
+        totalStatPointsEarned: character.totalStatPointsEarned + statPointsEarned,
       },
     });
 
@@ -421,6 +428,7 @@ export async function POST(
         newStreak,
         leveledUp,
         newLevel: leveledUp ? newLevel : null,
+        statPointsEarned: leveledUp ? statPointsEarned : 0,
         loot: inventoryItem,
         equipmentDrop,
         bossDamage,
