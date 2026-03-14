@@ -217,10 +217,15 @@ export default async function CharacterPage() {
       {/* Equipment Section */}
       <Card className="border-purple-500/30 bg-gradient-to-br from-card to-background">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-purple-400" />
-            Equipped Items
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-purple-400" />
+              Equipped Items
+            </CardTitle>
+            <Button variant="neon" size="sm" asChild>
+              <Link href="/character/equipment">View Equipment</Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {equippedItems.length === 0 ? (
